@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import {
   WORLD, CAMERA, TUNING, WATER_STOPS, ALTITUDE_BANDS, DEEP, ICEBERG, mapMaxDepth, MODEL_SCALE,
+  MAX_LEVEL,
 } from './config.js';
 
 // ─────────────────────────────────────────────────────────────
@@ -345,9 +346,14 @@ export class World {
     this.scene.add(this.hookLight);
   }
 
-  /** 灯具等级（0~4）：直接决定深海能看清多大范围 */
+  /** 灯具等级（0~MAX_LEVEL）：直接决定深海能看清多大范围 */
   setLamp(lv) {
-    const v = clamp(Math.round(Number.isFinite(lv) ? lv : 0), 0, 4);
+    // ⚠ 这里曾硬编码钳到 0~4 —— v0.1 只有 5 项升级 × 5 级时的遗留。
+    //   v0.2 扩到 11 项 × 21 级（MAX_LEVEL = 20）之后 LEVELS.lampRadius/lampPower 都重标定过，
+    //   唯独这一处没跟着改，导致灯具买到 Lv5 以上的钱**完全没有收益**
+    //   （第一张图的 MAP_LEVEL_CAP 就是 5，等于第一张图就能踩到这个坑）。
+    //   上界统一交给 MAX_LEVEL，跟全局约定「越界一律钳到 0..MAX_LEVEL」对齐。
+    const v = clamp(Math.round(Number.isFinite(lv) ? lv : 0), 0, MAX_LEVEL);
     this.lampLevel = v;
     this.lampR = TUNING.lampRadius(v);
     this.lampP = TUNING.lampPower(v);

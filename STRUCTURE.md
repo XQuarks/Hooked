@@ -38,6 +38,13 @@
 ├── DESIGN.md                       ← 设计推演 + 迭代 1~10 踩坑记录（面向开发）
 ├── EXPANSION.md                    ← 5 地图 / 92 鱼 / 8 枪的扩建方案（面向未来）
 ├── STRUCTURE.md                    ← 本文（文件结构与分层）
+├── docs/                           ← 📊 数值与剧情参考文档（01~05 **由脚本生成**，改 config.js 后重跑）
+│   ├── README.md                   ←    索引 + 「想改什么 → 改哪里」速查 + 维护规则（手写）
+│   ├── 01-世界与地图.md
+│   ├── 02-鱼类图鉴.md
+│   ├── 03-升级与成本.md
+│   ├── 04-物理与经济.md
+│   └── 05-剧情与世界观.md
 ├── .nojekyll                       ← 让 GitHub Pages 跳过 Jekyll 处理
 ├── .gitignore                      ← 忽略开发产物与 AI 记忆目录
 ├── src/                            ← 游戏源码（10 个 ES Module）
@@ -53,11 +60,16 @@
 │   └── codex.js
 ├── vendor/
 │   └── three.module.js             ← Three.js r160 本地副本（唯一第三方代码，MIT）
-├── .dev/                           ← CDP 无头 Chrome 验证 / 出图 / 探针脚本（不进仓库正文）
+├── .dev/                           ← CDP 无头 Chrome 验证 / 出图 / 探针脚本
+│   ├── gen-docs.mjs                ←    生成 docs/ 的数值文档（改了 config.js 就跑它）
 │   └── archive/                    ← 9 个一次性探针（`_` 前缀），已归档不再参与常规回归
 ├── shots-v2/                       ← 旧版人工复核截图 22 张（.gitignore 内，不进仓库）
 └── .workbuddy-ai/memory/           ← AI 工作记忆与开发日志（.gitignore 内，不进仓库）
 ```
+
+> ⚠ **`.dev/` 是「部分」进仓库**：`.dev/*.mjs`（脚本本体）与 `.dev/archive/` 都被 git 跟踪；
+> 被忽略的只是**跑脚本产生的产物** —— `.dev/profile-*/`（Chrome 用户目录）、`.dev/shots-*/`（出图）、
+> `.dev/*.json`、`.dev/*.log`。`shots-v2/` 与 `.workbuddy-ai/` 则整体不进仓库。
 
 ---
 
@@ -92,7 +104,7 @@
 | 文件 | 行数 | 作用 | 依赖 |
 |---|---:|---|---|
 | `src/ui.js` | 948 | HUD、深度尺、**手机外壳 + 4 个 App**（渔具店 / 图鉴 / 航线 / 设置）、结算面板、标题页、飘字。导出 `UI` | `codex` `icons` |
-| `src/icons.js` | 253 | 内联 SVG 图标库，共 27 个 `GLYPH`。全界面**零 emoji** 靠它兜住。导出 `GLYPH` `glyph()` `iconText()` `coinIcon()` `heartRow()` | 无 |
+| `src/icons.js` | 253 | 内联 SVG 图标库，共 29 个 `GLYPH` + 1 个 `coinIcon`（合计 30 个图标，覆盖 HUD / 4 个 App / 11 项升级 / 场景）。全界面**零 emoji** 靠它兜住。导出 `GLYPH` `glyph()` `iconText()` `coinIcon()` `heartRow()` | 无 |
 | `src/codex.js` | 409 | 图鉴两级排序（地图 → 海域 → 身价）+ canvas 2D 程序化鱼图标（彩色 / 黑色剪影共用同一套特征参数）。导出 `codexOrder()` `groupByMap()` `zoneLabel()` `mapLabel()` `drawFishIcon()` | `config` |
 
 ### ⑤ 载体层
@@ -111,28 +123,36 @@
 | `DESIGN.md` | 1454 | 开发者 | 原作玩法拆解、坐标系、状态机、数值设计、验收标准 + **迭代 1~10 全过程踩坑记录** |
 | `EXPANSION.md` | 1275 | 规划者 | 5 地图 / 92 鱼 / 8 枪 / 弱剧情的扩建方案 + 分 8 批的落地路线 |
 | `STRUCTURE.md` | — | 接手者 / AI | 本文：文件分层与作用 |
+| `docs/`（6 份） | — | 调数值 / 写文案的人 | **唯一的数值与文案参考**。`README.md` 是手写索引；`01~05` **由 `.dev/gen-docs.mjs` 从 `src/config.js` 生成** —— 手改会被下次生成覆盖 |
+
+> **为什么单独拆出 `docs/`**：README / DESIGN 里长期手抄了一份数值副本，
+> 导致反复出现「文档写 9 条鱼、代码其实 18 条」这类漂移（历史上一共抓到 4 批）。
+> 现在数值**只有 `config.js` 一处**，`docs/01~05` 是它的自动投影；
+> `node .dev/gen-docs.mjs check` 一跑就知道文档有没有过期。
 
 ### ⑦ 辅助层（均不进仓库正文）
 
 | 路径 | 规模 | 作用 |
 |---|---|---|
-| `.dev/` | 35 个 `.mjs`，6,942 行 | CDP 无头 Chrome 真跑游戏的验证 / 出图 / 探针脚本，详见 §3 |
+| `.dev/` | 27 个 `.mjs`（+ `archive/` 9 个） | CDP 无头 Chrome 真跑游戏的验证 / 出图 / 探针脚本，详见 §3。**脚本本体进仓库**，产物（`profile-*/` `shots-*/` `*.json` `*.log`）进 `.gitignore` |
+| `docs/` | 6 份 md | 数值与剧情参考文档（01~05 由 `.dev/gen-docs.mjs` 生成），详见 §2 ⑥ |
 | `shots-v2/` | 22 张 PNG，约 1.75 MB | 旧版人工复核截图（已在 `.gitignore`） |
 | `.workbuddy-ai/memory/` | 4 个 md | AI 工作记忆与开发日志（已在 `.gitignore`） |
 | `.nojekyll` / `.gitignore` | — | GitHub Pages 免 Jekyll；忽略开发产物、Chrome profile、AI 记忆目录 |
 
 ---
 
-## 3. `.dev/` 内部四类细分
+## 3. `.dev/` 内部五类细分
 
 | 类别 | 文件 | 说明 |
 |---|---|---|
-| **回归断言（7 套）** | `verify.mjs`（迭代 2 基线）· `verify3~8.mjs` | 主力回归。批 1 → `verify7`，批 2 → `verify8`。当前 **verify8 47 + verify7 38 + verify6 51 + verify5 34 + verify4 25 + verify3 33 = 228 条全绿** |
+| **回归断言（7 套）** | `verify.mjs`（迭代 2 基线）· `verify3~8.mjs` | 主力回归。批 1 → `verify7`，批 2 → `verify8`。当前 **verify8 47 + verify7 38 + verify6 51 + verify5 34 + verify4 25 + verify3 34 = 229 条全绿**（verify3 于 2026-09-16 实测 34/34） |
 | **数值验算（3 套）** | `curves.mjs` · `balance.mjs` · `balance-v2.mjs` | 升级曲线自检/导出、AI 代理玩家手感抽样、经济模型离线模拟 |
+| **文档生成（1 套）** | `gen-docs.mjs` | **从 `src/config.js` 生成 `docs/01~05`**。`check` 子命令只校验不写盘（不一致则退出码 1） |
 | **出图复核（11 套）** | `shots2/3/4/5-fish/5-ui/6` · `shots-icons` · `shots-shop` · `shots-polar` · `boom` · `_shots-v02` | 断言测不到"好不好看"，靠这些出图人工复核 |
 | **诊断探针 / 一次性（14 个）** | `smoke.mjs` · `probe-coin/coinfit/d1/emoji/roww.mjs`（在 `.dev/` 根）<br>`.dev/archive/` 下 9 个：`_dbg` · `_probe-air/aurora/codex/roww2/slow` · `_shots-v02` · `_splice-wide/cost` | 定位静默失败、字体缺字形、宽度挤压等问题的一次性脚本。**带 `_` 前缀的 9 个已归档到 `.dev/archive/`**（不再参与常规回归），路径仍按**项目根**解析 —— 跑法为 `node .dev/archive/_xxx.mjs`。⚠️ `_splice-*.mjs` 会覆写 `DESIGN.md` / `EXPANSION.md` 的表格，非必要勿跑 |
 
-> **完整清单**（35 个脚本逐个的一句话作用）见 [`README.md` 的「开发辅助」](./README.md#开发辅助)；本表只做归类。
+> **完整清单**（36 个脚本逐个的一句话作用）见 [`README.md` 的「开发辅助」](./README.md#开发辅助)；本表只做归类。
 > 下表用简写（如 `verify3~8.mjs` 指 `verify3.mjs` 到 `verify8.mjs` 共 6 个）。
 
 **跑法**（先另开终端起静态服务器）：
@@ -141,6 +161,7 @@
 python -m http.server 8899
 node .dev/verify8.mjs http://127.0.0.1:8899/index.html
 node .dev/curves.mjs check        # 改完 config.js 数值看这个
+node .dev/gen-docs.mjs check      # 改完 config.js 数值 → 校验 docs/ 有没有跟着过期
 node .dev/shots-icons.mjs http://127.0.0.1:8899/index.html   # 改完 icons.js 看这个
 ```
 
@@ -172,7 +193,8 @@ node .dev/shots-icons.mjs http://127.0.0.1:8899/index.html   # 改完 icons.js �
 
 | 想改什么 | 改哪里 |
 |---|---|
-| 数值 / 加鱼 / 加地图 / 加升级项 | `src/config.js` |
+| 数值 / 加鱼 / 加地图 / 加升级项 | `src/config.js`（**改完跑 `node .dev/gen-docs.mjs` 同步 `docs/`**） |
+| 某个数字该去哪找 / 怎么调 | [`docs/README.md`](./docs/README.md) 的「想改什么 → 改哪里」速查 |
 | 场景、光照、水体、地形、爆炸 | `src/world.js` |
 | 鱼的外形、游动行为、血量、对象池 | `src/fish.js` |
 | 鱼钩 / 鱼线 / 渔获串排布 | `src/hook.js` |
@@ -183,15 +205,17 @@ node .dev/shots-icons.mjs http://127.0.0.1:8899/index.html   # 改完 icons.js �
 | 输入方式 | `src/input.js` |
 | 音效 | `src/audio.js` |
 | 页面骨架 / importmap | `index.html` |
+| 鱼的文案 / 地图简介 | `src/config.js` 的 `desc` 字段（改完跑 `gen-docs.mjs`，会同步进 `docs/05`） |
 
 ---
 
 ## 6. 维护约定
 
-1. **新增数值一律进 `config.js`**，不要在 `game.js` / `ui.js` 里写魔法数字。
-2. **依赖不回头**：低层模块（`config` / `world` / `icons` / `audio` / `input`）不 import 高层模块。
-3. **`.dev/` 新脚本命名**：常规回归用 `verifyN.mjs`，出图用 `shotsN-*.mjs`；一次性探针加 `_` 前缀并放进 **`.dev/archive/`**。
+1. **新增数值一律进 `config.js`**，不要在 `game.js` / `ui.js` 里写魔法数字。**改完数值跑一次 `node .dev/gen-docs.mjs`** —— `docs/` 里的数字是自动生成的，不跑就过期了。
+2. **文档里不要手抄数值**：需要数据时链接到 `docs/`。手抄副本是这个项目历史上 4 批文档漂移的根因。
+3. **依赖不回头**：低层模块（`config` / `world` / `icons` / `audio` / `input`）不 import 高层模块。
+4. **`.dev/` 新脚本命名**：常规回归用 `verifyN.mjs`，出图用 `shotsN-*.mjs`；一次性探针加 `_` 前缀并放进 **`.dev/archive/`**。
    ⚠️ 所有 `.dev` 脚本的路径都按**项目根（`process.cwd()`）**解析，必须在项目根执行，例如 `node .dev/verify8.mjs`。
-4. **新增文件后同步本文 §1 目录树与 §2 作用表**，并检查 README「文件结构」是否需要更新。
-5. **进仓库的文件 = 根目录 7 项 + `src/` + `vendor/`**；`.dev/` `shots-v2/` `.workbuddy-ai/` 均被 `.gitignore` 忽略。
-6. **`.dev/profile-*` 是每次跑 verify 时 Chrome 自动生成的临时用户目录**，已被 `.gitignore` 覆盖；占盘很大（历史峰值 217 个目录 / 约 5.6 GB），可随时整批删除，下次运行会重建。
+5. **新增文件后同步本文 §1 目录树与 §2 作用表**，并检查 README「文件结构」是否需要更新。
+6. **`docs/README.md` 与 `DESIGN.md` / `EXPANSION.md` 是手写的，`docs/01~05` 是生成的** —— 改文档前先确认自己在改哪一类。
+7. **`.dev/profile-*` 是每次跑 verify 时 Chrome 自动生成的临时用户目录**，已被 `.gitignore` 覆盖；占盘很大（历史峰值 217 个目录 / 约 5.6 GB），可随时整批删除，下次运行会重建。

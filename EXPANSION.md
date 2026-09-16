@@ -1043,13 +1043,16 @@ setViewScale(s) / setLamp(lv) / viewRange()
 # 另开一个终端
 python -m http.server 8899
 
-# 六套回归断言（33 + 25 + 34 + 51 + 38 + 47 = 228 条）
+# 六套回归断言（34 + 25 + 34 + 51 + 38 + 47 = 229 条）
 node .dev/verify3.mjs http://127.0.0.1:8899/index.html
 node .dev/verify4.mjs http://127.0.0.1:8899/index.html
 node .dev/verify5.mjs http://127.0.0.1:8899/index.html
 node .dev/verify6.mjs http://127.0.0.1:8899/index.html
 node .dev/verify7.mjs http://127.0.0.1:8899/index.html   # 批 1：数值重标定
 node .dev/verify8.mjs http://127.0.0.1:8899/index.html   # 批 2：冰封极地
+
+# 改了 config.js 的任何数值之后额外跑（同步 docs/ 数值文档）
+node .dev/gen-docs.mjs check
 
 # 改了 icons.js 之后额外跑（图标观感没有断言能覆盖）
 node .dev/shots-icons.mjs
@@ -1176,7 +1179,7 @@ node .dev/probe-coinfit.mjs   # 查 7~8 位数的金币会不会撑破 HUD / 钱
 | `B11` | 商店的等级闸门只挡"在这张图能升到几级"，挡不住"带着在别处升的长线跨图"。在极地升到 Lv9（620m）再回宁静海湾（只有 430m 深），能一路潜到 620m —— 海底早过了、画面里只剩虚空 |
 | `D2` | 原来按"所有同 id 的鱼"认鱼群，把鱼群旁边的散鱼（`SCHOOL.extras`，同 id 但速度各自随机）也算进同一群，再断言"同向同速"必然 false。**认群只能按位置（等距链）** |
 
-### 9.4 数值回归
+### 9.6 数值回归
 
 **任何改动 `config.js` 数值的提交，都必须重跑 `balance-v2.mjs` 并把输出贴进提交信息。** 三条红线：
 
@@ -1184,7 +1187,7 @@ node .dev/probe-coinfit.mjs   # 查 7~8 位数的金币会不会撑破 HUD / 钱
 2. 主线总时长必须落在 **5.5 ~ 7 小时**（330 ~ 420 竿）。
 3. 许可证占金币出口的 **5% ~ 12%**。
 
-### 9.5 已知的坑（从现有迭代里学到的）
+### 9.7 已知的坑（从现有迭代里学到的）
 
 | 坑 | 教训 |
 |---|---|
