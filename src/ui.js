@@ -3,7 +3,7 @@
  *
  * 三块：
  *   1. HUD（顶部读数 / 海域大标题 / 深度尺 / 渔获面板 / 连击 / 飘字）
- *   2. 手机界面（需求④）：商店 / 图鉴 / 设置 三个 App 都装在里面
+ *   2. 手机界面（需求④）：渔具店 / 枪店 / 图鉴 / 航线 / 设置 五个 App 都装在里面
  *   3. 全屏遮罩卡片（标题页 / 结算 / 确认框）—— 这些不是 App，仍走 .overlay
  *
  * 图标一律用 icons.js 的内联 SVG，不用 emoji —— 原因见 icons.js 顶部说明。
@@ -111,7 +111,6 @@ export class UI {
       pBat: $('pBat'),
       pHome: $('pHome'),
       pApp: $('pApp'),
-      pDock: $('pDock'),
     };
     this.project = null;        // (worldX, worldY) => { nx, ny }
     this._zone = null;
@@ -154,14 +153,6 @@ export class UI {
     this.el.pSig.innerHTML = glyph('signal', 14);
     this.el.pWifi.innerHTML = glyph('wifi', 14);
     this.el.pBat.innerHTML = glyph('battery', 14);
-    this.el.pDock.innerHTML =
-      `<button class="p-cast" id="pCast">${glyph('cast', 20)}<span>抛 竿</span></button>`;
-    this._bindPhoneDock();
-  }
-
-  _bindPhoneDock() {
-    const cast = this.el.pDock.querySelector('#pCast');
-    if (cast) cast.onclick = () => this._phone && this._phone.handlers.cast();
   }
 
   // ── 基础显示 ─────────────────────────────────────────────
@@ -569,7 +560,7 @@ export class UI {
         </div>
       </div>
       <div class="p-grid">${apps}</div>
-      <div class="p-note" style="margin:0 14px">渔具店 / 图鉴 / 航线 / 设置都装在这台手机里 —— 点图标打开 App，底部随时能抛竿。</div>
+      <div class="p-note" style="margin:0 14px">渔具店 / 枪店 / 图鉴 / 航线 / 设置都装在这台手机里 —— 点图标打开 App。想抛竿就先收起手机，再点一下画面。</div>
     `;
     this.el.pHome.querySelectorAll('[data-app]').forEach((b) => {
       b.onclick = () => {
@@ -986,8 +977,8 @@ export class UI {
       <div class="p-note">
         ① <b>下潜</b> · 点屏幕抛竿，左右拖动躲开鱼，碰到就自动收线<br>
         ② <b>上升</b> · 上升时撞到的鱼才会被串上鱼线<br>
-        ③ <b>天空</b> · 渔获按身价飞向高空，点哪儿炸哪儿<br>
-        ④ <b>抛竿</b> · 底部金色按钮随时开钓
+        ③ <b>天空</b> · 用当前装备的枪把鱼打下来（长按连发 / 点按单发）<br>
+        ④ <b>手机</b> · 渔具店 / 枪店 / 图鉴 / 航线 / 设置；<b>收起手机后</b>点画面才抛竿
       </div>
 
       <div class="p-sec">数 据</div>
@@ -1028,8 +1019,8 @@ export class UI {
       <div class="rulelist">
         <div>① <b>下潜</b> · 点屏幕抛竿，<span class="k">左右拖动</span>躲开鱼——碰到就自动收线</div>
         <div>② <b>上升</b> · 上升时撞到的鱼<span class="g">才会被串上鱼线</span>，左右移动多抓几条</div>
-        <div>③ <b>天空</b> · 渔获按身价飞向高空，<span class="k">点哪儿炸哪儿</span>把它们打下来</div>
-        <div>④ <b>手机</b> · 左下角手机里装着<span class="g">渔具店 / 图鉴 / 设置</span>三个 App</div>
+        <div>③ <b>天空</b> · 渔获按身价飞向高空，用<span class="k">枪</span>把它们打下来（长按连发 / 点按单发）</div>
+        <div>④ <b>手机</b> · 左下角手机里装着<span class="g">渔具店 / 枪店 / 图鉴 / 航线 / 设置</span>五个 App</div>
       </div>
       <div class="result-rows">
         <div class="rrow"><span>地图</span><b>${this._map.name}</b></div>

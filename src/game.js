@@ -3,7 +3,7 @@
  *
  *   TITLE ─▶ IDLE ─▶ DESCEND ─▶ ASCEND ─▶ AIR ─▶ RESULT ─┐
  *             ▲   │                                        │
- *             │   └─▶ PHONE（手机：商店 / 图鉴 / 设置三个 App）│
+ *             │   └─▶ PHONE（手机：渔具店 / 枪店 / 图鉴 / 航线 / 设置）│
  *             └────────────────────────────────────────────┘
  *
  * 三个阶段的玩法（和《Ridiculous Fishing》一致）：
@@ -361,7 +361,7 @@ class Game {
       if (this.state === STATE.DESCEND) this._reel();
     });
     el.mute.addEventListener('click', (e) => { e.stopPropagation(); this._toggleMute(); });
-    // 手机入口：商店 / 图鉴 / 设置 三个 App 都在这台手机里
+    // 手机入口：渔具店 / 枪店 / 图鉴 / 航线 / 设置 五个 App 都在这台手机里
     el.phoneBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (this.state === STATE.IDLE && !this.phoneOpen) { SFX.tap(); this.openPhone(); }
@@ -379,7 +379,7 @@ class Game {
   }
 
   // ── 手机（商店 / 图鉴 / 设置）─────────────────────────────
-  /** 打开手机：世界继续按 IDLE 跑，只是把抛竿输入和底部入口收起来 */
+  /** 打开手机：世界继续按 IDLE 跑，只是把抛竿输入收起来（手机里没有抛竿入口） */
   openPhone() {
     if (this.state !== STATE.IDLE || this.phoneOpen) return;
     this.phoneOpen = true;
@@ -402,7 +402,6 @@ class Game {
   _phoneHandlers() {
     return {
       tap: () => SFX.tap(),
-      cast: () => { SFX.tap(); this.closePhone(); this.enterDescend(); },
       buy: (k) => this._buy(k),
       mapList: () => MAPS.map((m) => this.mapProgress(m)),
       goMap: (id) => this._goMap(id),

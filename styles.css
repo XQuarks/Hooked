@@ -1305,36 +1305,9 @@ canvas#game {
 /* 未开放的地图（多地图结构预留）：App 变灰 */
 .p-app-item[disabled] { opacity: 0.42; cursor: default; }
 
-.p-dock {
-  position: relative;
-  z-index: 3;
-  margin: 4px 13px 0;
-  padding: 9px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.11);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-.p-cast {
-  width: 100%;
-  padding: 14px;
-  border: none;
-  border-radius: 17px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  background: linear-gradient(180deg, #ffe17a, var(--gold) 48%, #dda212);
-  color: #3a2400;
-  font-size: 15px;
-  font-weight: 900;
-  letter-spacing: 0.18em;
-  cursor: pointer;
-  box-shadow: 0 5px 0 #9c6d0a, inset 0 2px 0 rgba(255, 255, 255, 0.65);
-}
-.p-cast .svg-ico { width: 20px; height: 20px; }
-.p-cast:active { transform: translateY(3px); box-shadow: 0 2px 0 #9c6d0a; }
+/* 原来这里有 .p-dock / .p-cast（底部常驻的「抛竿」按钮）。
+   v0.4.1 移除：手机里不再有抛竿入口，抛竿唯一入口是**收起手机后点游戏画面**。
+   没有别的元素复用这两条规则，所以一并删掉，不留死 CSS。 */
 .p-bar { height: 22px; display: grid; place-items: center; }
 .p-bar::after {
   content: '';

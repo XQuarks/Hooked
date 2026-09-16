@@ -146,10 +146,10 @@
 
 | 类别 | 文件 | 说明 |
 |---|---|---|
-| **回归断言（8 套）** | `verify.mjs`（迭代 2 基线）· `verify3~9.mjs` | 主力回归。批 1 → `verify7`，批 2 → `verify8`，批 3（枪械）→ `verify9`。当前 **verify9 43 + verify8 47 + verify7 39 + verify6 51 + verify5 34 + verify4 25 + verify3 34 = 273 条全绿** |
+| **回归断言（8 套）** | `verify.mjs`（迭代 2 基线）· `verify3~9.mjs` | 主力回归。批 1 → `verify7`，批 2 → `verify8`，批 3（枪械）→ `verify9`。当前 **verify9 43 + verify8 47 + verify7 39 + verify6 52 + verify5 34 + verify4 25 + verify3 34 = 274 条全绿** |
 | **数值验算（3 套）** | `curves.mjs` · `balance.mjs` · `balance-v2.mjs` | 升级曲线自检/导出、AI 代理玩家手感抽样、经济模型离线模拟 |
 | **文档生成（1 套）** | `gen-docs.mjs` | **从 `src/config.js` 生成 `docs/01~06`**。`check` 子命令只校验不写盘（不一致则退出码 1） |
-| **出图复核（12 套）** | `shots2/3/4/5-fish/5-ui/6` · `shots-icons` · `shots-shop` · `shots-polar` · **`shots-guns`** · `boom` · `_shots-v02` | 断言测不到"好不好看"，靠这些出图人工复核 |
+| **出图复核（13 套）** | `shots2/3/4/5-fish/5-ui/6` · `shots-icons` · `shots-shop` · `shots-polar` · `shots-guns` · **`shots-phone`** · `boom` · `_shots-v02` | 断言测不到"好不好看"，靠这些出图人工复核 |
 | **诊断探针 / 一次性（14 个）** | `smoke.mjs` · `probe-coin/coinfit/d1/emoji/roww.mjs`（在 `.dev/` 根）<br>`.dev/archive/` 下 9 个：`_dbg` · `_probe-air/aurora/codex/roww2/slow` · `_shots-v02` · `_splice-wide/cost` | 定位静默失败、字体缺字形、宽度挤压等问题的一次性脚本。**带 `_` 前缀的 9 个已归档到 `.dev/archive/`**（不再参与常规回归），路径仍按**项目根**解析 —— 跑法为 `node .dev/archive/_xxx.mjs`。⚠️ `_splice-*.mjs` 会覆写 `DESIGN.md` / `EXPANSION.md` 的表格，非必要勿跑 |
 
 > **完整清单**（36 个脚本逐个的一句话作用）见 [`README.md` 的「开发辅助」](./README.md#开发辅助)；本表只做归类。
@@ -165,6 +165,7 @@ node .dev/gen-docs.mjs check      # 改完 config.js 数值 → 校验 docs/ 有
 node .dev/verify9.mjs            # 改完枪械 / 血量看这个
 node .dev/shots-icons.mjs http://127.0.0.1:8899/index.html   # 改完 icons.js 看这个
 node .dev/shots-guns.mjs         # 改完枪店 / 枪械条 / 枪械图标看这个
+node .dev/shots-phone.mjs        # 改完手机界面（增删按钮 / 改间距）看这个
 ```
 
 ---

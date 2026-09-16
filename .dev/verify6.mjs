@@ -394,7 +394,12 @@ try {
       ids: apps.map(a=>a.dataset.app),
       names: apps.map(a=>a.textContent.trim().replace(/\\s+/g,'')),
       hasWidget: !!document.querySelector('#pHome .p-widget'),
-      hasDock: !!document.querySelector('#pDock .p-cast'),
+      // v0.4.1：手机底部的「抛竿」Dock 已移除。这里量的是"它真的没了"，
+      // 而不是"换个选择器再找一次"—— 顺手把容器也一起量了，
+      // 免得只删按钮、留下一条空荡荡的圆角横条。
+      castBtn: !!document.querySelector('#pCast'),
+      dockBox: !!document.querySelector('#pDock'),
+      homeBar: !!document.querySelector('.p-bar'),
       time: document.getElementById('pTime').textContent,
       statusSvg: document.querySelectorAll('.p-sys svg').length };
   })())`));
@@ -404,9 +409,10 @@ try {
       && home.names[2].includes('鱼图鉴') && home.names[3].includes('航线')
       && home.names[4].includes('设置'),
     JSON.stringify(home.names));
-  check('E6 手机有状态栏（时钟 + 信号/Wi-Fi/电量）与底部常驻抛竿 Dock',
-    home.statusSvg === 3 && /^\d{1,2}:\d{2}$/.test(home.time) && home.hasDock && home.hasWidget,
-    `时钟 ${home.time} · 状态图标 ${home.statusSvg} 个`);
+  check('E6 手机有状态栏（时钟 + 信号/Wi-Fi/电量）、桌面小部件，且**没有**抛竿 Dock',
+    home.statusSvg === 3 && /^\d{1,2}:\d{2}$/.test(home.time) && home.hasWidget
+      && home.castBtn === false && home.dockBox === false && home.homeBar === true,
+    `时钟 ${home.time} · 状态图标 ${home.statusSvg} 个 · 抛竿按钮=${home.castBtn} · Dock 容器=${home.dockBox} · Home 条=${home.homeBar}`);
 
   // 商店 App
   await ev(`document.querySelector('[data-app="shop"]').click()`);
@@ -508,15 +514,42 @@ try {
   check('E15 点手机外的空白收起手机，入口按钮恢复',
     closed.hidden && closed.btnBack, JSON.stringify(closed));
 
-  // Dock 抛竿
+  // v0.4.1：手机里的抛竿入口已移除 —— 断言反过来，验的是"**没有**这个入口"。
+  // ⚠ 光断言"按钮不存在"是不够的：还得验"手机开着时点画面不会抛竿"
+  //   （E14 已经覆盖），以及"收起手机后点画面能抛竿"（E15 之后的状态）。
   await ev('window.__game.openPhone()');
   await rafWait(320);
-  await ev(`document.getElementById('pCast').click()`);
+  const noCast = J(await ev(`JSON.stringify((()=>{
+    const g = window.__game;
+    const before = g.state;
+    // 兜底：万一手滑把按钮加回来，这里也能抓到（不能只查选择器）
+    const anyBtn = [...document.querySelectorAll('#phoneLayer button')]
+      .map(b => b.textContent.trim().replace(/\\s+/g,'')).filter(t => t.includes('抛竿'));
+    // 手机开着时点画面：不应该抛竿
+    // ⚠ 必须**成对**发 down/up：Input 用 _activeId 做单指去重，
+    //   只发 down 不发 up 的话 _activeId 会一直挂在 0，
+    //   下一次 pointerdown 会被直接忽略 —— 症状是"E16b 莫名其妙抛不了竿"。
+    const cv = document.getElementById('game');
+    cv.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:0, clientX:200, clientY:400}));
+    cv.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:0, clientX:200, clientY:400}));
+    return { before, after: g.state, castBtns: anyBtn.length,
+      hasDock: !!document.querySelector('#pDock') };})())`));
+  check('E16 手机里不再有抛竿入口（按钮已移除，且开着手机时点画面不会抛竿）',
+    noCast.castBtns === 0 && noCast.hasDock === false
+      && noCast.before === 'idle' && noCast.after === 'idle',
+    `手机内「抛竿」按钮 ${noCast.castBtns} 个 · Dock 容器=${noCast.hasDock} · 点画面后 state=${noCast.after}`);
+
+  // 收起手机之后，抛竿照常可用 —— 这是现在**唯一**的抛竿路径，必须确认它没被一起弄坏
+  await ev('window.__game.closePhone()');
+  await rafWait(260);
+  await ev(`(()=>{const cv = document.getElementById('game');
+    cv.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:0, clientX:200, clientY:400}));
+    cv.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:0, clientX:200, clientY:400}));
+    return 'ok';})()`);
   await waitFor('window.__game.state === "descend"', 4000);
-  const cast = J(await ev(`JSON.stringify({ state: window.__game.state,
-    phoneHidden: document.getElementById('phoneLayer').classList.contains('hidden') })`));
-  check('E16 手机底部的抛竿按钮：收起手机并直接开钓',
-    cast.state === 'descend' && cast.phoneHidden, JSON.stringify(cast));
+  const castNow = J(await ev(`JSON.stringify({ state: window.__game.state })`));
+  check('E16b 收起手机后点画面就能抛竿（移除 Dock 后抛竿路径仍然通）',
+    castNow.state === 'descend', `state=${castNow.state}`);
 
   // ── F 需求⑤：空中旋转 ───────────────────────────────────
   // ⚠ 采样**多条鱼**再取最大值，不能只看 active[0]。

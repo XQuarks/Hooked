@@ -89,13 +89,9 @@ export const GLYPH = {
     <path d="M11.2 7.6h1.6v12.4a1 1 0 0 1-1.6 0Z" fill="#000" opacity="0.3"/>
   </g>`,
   settings: GEAR,
-  // 抛竿：鱼竿（含卷线器）+ 垂下的鱼线 + 鱼钩
-  cast: `<g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M3.6 20.6 12.4 6.2"/>
-    <path d="M12.4 6.2c1.5 3.3 3.3 5 4.3 9.1"/>
-    <path d="M16.7 15.3a2.7 2.7 0 1 1-2.7 2.7"/>
-    <circle cx="6.2" cy="17.9" r="1.6" fill="currentColor" stroke="none"/>
-  </g>`,
+  // ⚠ v0.4.1 删掉了 `cast`（鱼竿）图标：它唯一的用处是手机底部那条 Dock 的「抛竿」按钮，
+  //   而那条 Dock 已经移除（手机里不再有抛竿入口）。
+  //   留着它 = 留一个永远渲染不出来的图标，还会让 shots-icons 的总览图多一格噪音。
   // 鱼钩（升级项）
   hook: `<g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
     <path d="M15.6 3.2v10.4"/>
