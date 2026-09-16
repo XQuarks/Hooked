@@ -25,8 +25,10 @@ const ROW_META = {
   hookRadius:   { label: '鱼钩',     unit: 'm',   key: 'hook' },
   descendSpeed: { label: '铅坠',     unit: 'm/s', key: 'sinker' },
   ascendSpeed:  { label: '绞盘',     unit: 'm/s', key: 'winch' },
-  blastRadius:  { label: '爆炸半径', unit: 'm',   key: 'power' },
-  damage:       { label: '攻击力',   unit: '',    key: 'power' },
+  // ⚠ v0.4：`blastRadius` / `damage` 两条曲线已随枪械系统删除 ——
+  //   现在每把枪自己的伤害/半径写在 `GUNS` 表里（见 config.js 的 GUNS 段），
+  //   「攻击力」升级改成一条乘数曲线 `gunPower`（只乘伤害，不动半径）。
+  gunPower:     { label: '攻击力',   unit: '×',   key: 'power' },
   lampRadius:   { label: '灯具',     unit: 'm',   key: 'lamp' },
   lampPower:    { label: '照度',     unit: '',    key: 'lamp' },
   creelLimit:   { label: '鱼护',     unit: '条',  key: 'creel' },
@@ -39,7 +41,7 @@ const ROW_META = {
 // 宽表的列顺序（和 EXPANSION.md 2.2 一致，改顺序要同步改文档）
 const WIDE = [
   ['line', 'maxDepth'], ['hook', 'hookRadius'], ['sinker', 'descendSpeed'],
-  ['power', 'damage'], ['power', 'blastRadius'], ['lamp', 'lampRadius'],
+  ['power', 'gunPower'], ['lamp', 'lampRadius'],
   ['lamp', 'lampPower'], ['winch', 'ascendSpeed'], ['creel', 'creelLimit'],
   ['insurance', 'insurance'], ['sonar', 'sonar'], ['bait', 'bait'], ['rig', 'rig'],
 ];
@@ -62,13 +64,14 @@ if (mode === 'check') {
     if (row.some((v) => !Number.isFinite(v))) problems.push(`${k}: 有非有限值`);
     if (row.some((v, i) => i > 0 && v < row[i - 1])) problems.push(`${k}: 不单调`);
   }
-  // 冻结位：v0.1 就存在的 8 条曲线，索引 0~4 不允许变。
+  // 冻结位：v0.1 就存在的曲线，索引 0~4 不允许变。
   // ⚠ v0.2「水下世界整体放大 2 倍」把这一整组重新标定过一次（×2，maxDepth ×4），
   //   基线跟着换成 v0.2 的现值。老存档不受影响 —— 存档存的是等级不是数值。
+  // ⚠ v0.4：`blastRadius` / `damage` 已删除（枪械系统接管了伤害与半径），
+  //   所以这里从 8 条变成 6 条。这是设计变更，不是回归。
   const FROZEN = {
     maxDepth: [320, 450, 580, 710, 840], hookRadius: [8, 10.4, 12.8, 15.2, 17.6],
     descendSpeed: [64, 82, 100, 118, 136], ascendSpeed: [240, 252, 264, 276, 288],
-    blastRadius: [48, 56, 64, 72, 80], damage: [1, 2, 3, 4, 5],
     lampRadius: [52, 92, 136, 184, 240], lampPower: [0.10, 0.30, 0.48, 0.66, 0.84],
   };
   for (const [k, want] of Object.entries(FROZEN)) {

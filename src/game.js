@@ -21,6 +21,7 @@ import {
   SPAWN_TOP_MARGIN, MODEL_SCALE,
   UPGRADES, UPGRADE_ORDER, MAX_LEVEL, levelCapForMap, upgradeCost, SAVE_KEY, altitudeAt,
   DEFAULT_MAP, MAPS, mapById, mapMaxDepth, zoneAtDepth, zonesOfMap,
+  GUNS, GUN_ORDER, GUN_MAX_LEVEL, gunById, gunStats, gunUpgradeCost,
 } from './config.js';
 import { World, clamp, lerp } from './world.js';
 import { FishManager, FISH_STATE } from './fish.js';
@@ -60,6 +61,15 @@ const freshSave = () => ({
   // bestDepth 仍是"全游戏最深记录"（结算面板用），换图条件②要的是**本图**的，
   // 两者不能混 —— 否则在冰封极地潜到 600m 会顺手满足宁静海湾的换图条件。
   mapBest: {},
+  // ── 枪械（v0.4）──
+  //   owned   已买下的枪 id（初始手枪不在这里，它永远可用）
+  //   current 当前装备的枪 id —— **这是"当前枪械"的唯一真相**
+  //   levels  每把枪各自的等级（0 ~ GUN_MAX_LEVEL）
+  //
+  // ⚠ 为什么不把枪械等级塞进 `levels` 那张表：那张表的键是**升级项**（鱼线/鱼钩/…），
+  //   走 lvAt() 取绝对值曲线；枪械等级是"这把枪自己的档位"，取值走 gunStats()。
+  //   两张表混在一起，加一把枪就会让 `lvAt` 的越界钳制把枪械等级当成升级等级。
+  guns: { owned: [], current: GUN_ORDER[0], levels: Object.fromEntries(GUN_ORDER.map((id) => [id, 0])) },
 });
 
 function loadSave() {
@@ -101,6 +111,30 @@ function loadSave() {
       // 看起来像进度被清了。只在表是空的时候补，不会覆盖真实数据。
       if (!Object.keys(s.mapBest).length && s.bestDepth > 0) {
         s.mapBest[DEFAULT_MAP.id] = Math.round(s.bestDepth);
+      }
+      // ── 枪械：逐字段兜底，任何一项坏掉都不影响其它项 ──
+      // ⚠ v0.4 之前的老存档整个 `guns` 字段都不存在 —— 上面的 freshSave() 已经铺好了
+      //   默认值（手枪 + 全 0 级），这里只覆盖"读得出来的"部分。
+      //   verify9 的 D4 专门盯这条路径。
+      const rg = raw.guns;
+      if (rg && typeof rg === 'object') {
+        if (Array.isArray(rg.owned)) {
+          // 只保留**现在还存在的枪 id**：删过枪 / 改过 id 的存档不会留下一堆幽灵
+          s.guns.owned = rg.owned.filter((x) => typeof x === 'string' && GUNS.some((g) => g.id === x));
+        }
+        if (typeof rg.current === 'string' && GUNS.some((g) => g.id === rg.current)) {
+          s.guns.current = rg.current;
+        }
+        if (rg.levels && typeof rg.levels === 'object') {
+          for (const id of GUN_ORDER) {
+            s.guns.levels[id] = clamp(Math.round(Number(rg.levels[id]) || 0), 0, GUN_MAX_LEVEL);
+          }
+        }
+      }
+      // current 指向一把没买的枪（手改存档 / 上面被过滤掉了）→ 退回手枪。
+      // 不兜这一下的话，玩家会拿着一把"没拥有却能开火"的枪，枪店里还看不到它。
+      if (s.guns.current !== GUN_ORDER[0] && !s.guns.owned.includes(s.guns.current)) {
+        s.guns.current = GUN_ORDER[0];
       }
     }
   } catch (_) { /* 存档损坏则用默认值 */ }
@@ -178,7 +212,6 @@ class Game {
     this.time = 0;
     this.timeScale = 1;
     this.slowmoT = 0;
-    this.fireCd = 0;
     this.hitCd = 0;
     this.bottomT = 0;
     this.reelPre = 0;
@@ -205,6 +238,14 @@ class Game {
     // 浮冰减速剩余时间（冰封极地）。> 0 时下潜速度乘 ICEBERG.slowScale ——
     // 撞浮冰的代价是"这一段变慢"，不是"这一竿结束"（和撞鱼区分开）。
     this.iceSlowT = 0;
+    // ── 枪械状态（只在 AIR 阶段有意义，每次进空中都重置）──
+    // 为什么是散装字段而不是一个对象：这几个值每帧都要读写，散装字段的读写
+    // 在热路径上没有属性查找开销；而且调试时 `g.gunCd` 一眼能看见，不用展开对象。
+    this.gunCd = 0;         // 距离下一发的冷却（秒）
+    this.gunAmmo = 0;       // 弹匣剩余发数（burst 用；激光不用）
+    this.gunReloadT = 0;    // 换弹 / 强制冷却剩余（秒），> 0 时不能开火
+    this.gunHeat = 0;       // 激光连续照射时长（同时是伤害递增公式里的 t）
+    this.gunSpin = 0;       // 加特林转速预热（0 → spinup）
     this.camY = WORLD.surfaceY + this.world.viewH * CAMERA.idleAnchor;
     this.world.camY = this.camY;
 
@@ -259,6 +300,9 @@ class Game {
     this.pufferPenalty = TUNING.pufferPenaltyAt(L.insurance); // 保险
     this.baitBonus = TUNING.bait(L.bait);                    // 鱼饵（spawnFish 抽签时用）
     this.sonarPct = TUNING.sonar(L.sonar);                   // 声呐（0~1，深度尺上画探测带）
+    // 攻击力：**所有枪械共用的伤害倍率**。v0.4 起它不再直接给"伤害/半径的绝对值" ——
+    // 半径是每把枪的身份（手枪 24 / 散弹 30 / 巴雷特 60），全局放大会把它们的差别抹平。
+    this.gunMul = TUNING.gunPower(L.power);
     this.hook.setRadius(TUNING.hookRadius(L.hook));
     this.world.setLamp(L.lamp);
     this.ui.setLineLimit(this.maxDepth);
@@ -294,7 +338,9 @@ class Game {
       } else if (this.state === STATE.DESCEND || this.state === STATE.ASCEND) {
         this._steer(nx);
       } else if (this.state === STATE.AIR) {
-        this._fireAt(nx, ny);
+        // 空中：点一下 = 开一枪。长按连发不在这里 —— 那种枪由 _updateGun 每帧驱动，
+        // 这里只负责"按下瞬间的第一发"，保证手感没有延迟。
+        this._tapFire();
       }
     };
     this.input.onDrag = (nx) => {
@@ -360,6 +406,13 @@ class Game {
       buy: (k) => this._buy(k),
       mapList: () => MAPS.map((m) => this.mapProgress(m)),
       goMap: (id) => this._goMap(id),
+      // ── 枪店 ──
+      // UI 拿到的是一份**已经算好的**列表（拥有 / 装备中 / 等级 / 下一级数值 / 价格），
+      // 界面里不做任何判断 —— 否则"按钮亮了却买不了"这类不一致会散在 UI 里，还没人测得到。
+      gunList: () => GUNS.map((g) => this.gunEntry(g)),
+      buyGun: (id) => this._buyGun(id),
+      equipGun: (id) => this._equipGun(id),
+      upgradeGun: (id) => this._upgradeGun(id),
       close: () => this.closePhone(),
       reset: () => this._confirmReset(),
       getMuted: () => isMuted(),
@@ -401,6 +454,7 @@ class Game {
     this.ui.closePhone();
     this.ui.showHud(false);
     this.ui.showPhoneBtn(false);
+    this.ui.showGunBar(false);
     this.ui.setDepthChip(false);
     this.ui.setSeaTitle(null);
     this.ui.hideOverlay();
@@ -423,6 +477,7 @@ class Game {
     this.ui.hideOverlay();
     this.ui.showHud(true);
     this.ui.showPhoneBtn(true);
+    this.ui.showGunBar(false);
     this.ui.setDepthChip(false);          // 待机时先藏起来
     this.ui.setCombo(0, 1);
     this.ui.showReel(false);
@@ -593,6 +648,72 @@ class Game {
     this.ui.refreshApp();                  // 商店 App 原地重绘（价格 / 等级 / 可买状态）
   }
 
+  // ── 枪店（v0.4）──────────────────────────────────────────
+  /**
+   * 枪店里一把枪要显示的全部信息。
+   *
+   * **UI 只负责排版，不做任何判断** —— 拥有 / 装备中 / 能否买得起 / 下一级数值
+   * 全在这里算好。为什么不把这些判断放进 ui.js：那些判断散在界面里之后，
+   * "按钮亮着却点不动"这类不一致会同时出现在好几个地方，而且没人测得到。
+   */
+  gunEntry(g) {
+    const lv = this.save.guns.levels[g.id] || 0;
+    return {
+      gun: g,
+      lv,
+      owned: g.price <= 0 || this.save.guns.owned.includes(g.id),
+      current: this.save.guns.current === g.id,
+      stat: gunStats(g.id, lv),
+      next: lv >= GUN_MAX_LEVEL ? null : gunStats(g.id, lv + 1),
+      upCost: gunUpgradeCost(g.id, lv),
+      maxed: lv >= GUN_MAX_LEVEL,
+      canAffordBuy: this.save.coins >= g.price,
+    };
+  }
+
+  _buyGun(id) {
+    const g = GUNS.find((x) => x.id === id);
+    if (!g || g.price <= 0) return;
+    if (this.save.guns.owned.includes(id)) return;
+    if (this.save.coins < g.price) { SFX.deny(); this.world.addShake(2); return; }
+    this.save.coins -= g.price;
+    this.save.guns.owned.push(id);
+    // 买完直接装上 —— 玩家刚花了一大笔，不该再让他多点一次「装备」
+    this.save.guns.current = id;
+    persist(this.save);
+    SFX.buy();
+    this.ui.setCoins(this.save.coins);
+    this.ui.refreshApp();
+  }
+
+  _equipGun(id) {
+    const g = GUNS.find((x) => x.id === id);
+    if (!g) return;
+    if (g.price > 0 && !this.save.guns.owned.includes(id)) return;   // 没买的枪不能装
+    if (this.save.guns.current === id) return;
+    this.save.guns.current = id;
+    persist(this.save);
+    SFX.buy();
+    this.ui.refreshApp();
+  }
+
+  _upgradeGun(id) {
+    const g = GUNS.find((x) => x.id === id);
+    if (!g) return;
+    const lv = this.save.guns.levels[id] || 0;
+    if (lv >= GUN_MAX_LEVEL) return;
+    const cost = gunUpgradeCost(id, lv);
+    if (this.save.coins < cost) { SFX.deny(); this.world.addShake(2); return; }
+    this.save.coins -= cost;
+    this.save.guns.levels[id] = lv + 1;
+    persist(this.save);
+    SFX.buy();
+    // 枪械数值是**现取**的（gunStats），不需要像 applyUpgrades 那样重新落一遍；
+    // 只有金币和枪店界面要刷。
+    this.ui.setCoins(this.save.coins);
+    this.ui.refreshApp();
+  }
+
   // ── ① 下潜（鱼是障碍） ────────────────────────────────────
   enterDescend() {
     this.state = STATE.DESCEND;
@@ -601,6 +722,7 @@ class Game {
     this.ui.hideOverlay();
     this.ui.showHud(true);
     this.ui.showPhoneBtn(false);
+    this.ui.showGunBar(false);
     this.ui.setDepthChip(true);           // 开始游戏后深度 chip 才出现（需求⑨）
     this.ui.clearCatch();
     this.ui.clearFloats();
@@ -893,7 +1015,8 @@ class Game {
     this.state = STATE.AIR;
     this.hook.setVisible(false);
     this.ui.showReel(false);
-    this.ui.setHint('点击屏幕任意位置引爆');
+    this.ui.setHint(this._gunHint());
+    this.ui.showGunBar(true);
     this.ui.setZone(null);
     this.ui.setCatchVisible(false);
 
@@ -928,7 +1051,7 @@ class Game {
     this.airClearT = 0;
     this._airHold = null;   // 清空后的"定格"瞄准点缓存
     this.birdT = 0.9;
-    this.fireCd = 0;
+    this._resetGun();
     this.combo = 0;
     this.mult = 1;
     this.maxAltReached = 0;
@@ -939,49 +1062,285 @@ class Game {
     this.slowmoT = TUNING.slowmoTime;
   }
 
+  // ── ③ 空中：枪械（v0.4）────────────────────────────────────
+  //
+  // 七把枪共用一条开火管线，差别全在 `GUNS[].mech` 和数值上：
+  //
+  //   single   点一下一发，**长按不连发**（普通手枪 / 散弹枪 / 巴雷特）
+  //   burst    按住连发到弹匣空 → 自动换弹 → 换完继续（Uzi）
+  //   auto     按住一直打，无弹匣，开火头 spinup 秒转速没上来（加特林）
+  //   laser    按住持续结算，伤害随连续照射时间递增，照久了过热（激光枪）
+  //   pierce   点一下打出一条贯穿屏幕的直线，线上全中（鱼叉枪）
+  //
+  // ⚠ 判定一律发生在**玩家指的那个世界坐标**上，和"枪口在哪"无关 ——
+  //   手机上手指会挡住枪口，如果判定挂在枪口上就必然打不准。
+  //   鱼叉是唯一的例外：它有一条真实的弹道，起点在画面下方（船的位置）。
+
+  /** 当前装备的枪（**唯一真相是 save.guns.current**） */
+  get gun() { return gunById(this.save.guns.current); }
+
+  /** 当前枪械的等级 */
+  get gunLv() { return this.save.guns.levels[this.gun.id] || 0; }
+
+  /** 当前枪械在该等级下的数值（已含枪械等级，**未乘**攻击力倍率） */
+  get gunStat() { return gunStats(this.gun.id, this.gunLv); }
+
   /**
-   * 点击处爆炸。
-   * 判定跟任何枪口位置无关 —— 爆炸就发生在玩家点的那个世界坐标上，
-   * 所以手机上不会出现「手指挡住枪口」的问题。
-   * 屏幕下方也不再画武器外观：命中反馈就是那圈冲击波本身。
+   * 当前瞄准的世界坐标。
+   *
+   * 用 `input.nx/ny` 而不是"开火那一刻记下来的点"：长按连发的枪必须
+   * "手指拖到哪就打到哪"，瞄准点得每帧重读。
+   * `-0.045` 是手机上的**手指偏移补偿** —— 指肚会盖住落点，把判定往上挪一点，
+   * 玩家看到的才是"我指哪儿打哪儿"。
    */
-  _fireAt(nx, ny) {
-    if (this.state !== STATE.AIR || this.fireCd > 0) return;
+  _aimPoint() {
+    const ny = clamp(this.input.ny - 0.045, 0, 1);
+    return this.world.screenToWorld(this.input.nx, ny);
+  }
 
-    const w = this.world.screenToWorld(nx, clamp(ny - 0.045, 0, 1));
-    if (!Number.isFinite(w.x) || !Number.isFinite(w.y)) return;
+  /** 空中阶段的操作提示 —— 按当前枪械的机制给，别让玩家自己去猜这把枪怎么用 */
+  _gunHint() {
+    switch (this.gun.mech) {
+      case 'auto': return '按住不放 · 持续开火';
+      case 'burst': return '按住连发 · 打空自动换弹';
+      case 'laser': return '按住持续照射 · 越照越疼';
+      case 'pierce': return '点击射出鱼叉 · 线上的鱼全中';
+      case 'shotgun': return '点击开火 · 扇形覆盖一大片';
+      default: return '点击开火 · 单点射击';
+    }
+  }
 
-    const lv = this.save.levels.power;
-    this.fireCd = TUNING.fireCooldown;
+  /** 进入空中阶段时把枪械状态清零（弹匣压满、无冷却、激光递增归零） */
+  _resetGun() {
+    const s = this.gunStat;
+    this.gunCd = 0;
+    this.gunReloadT = 0;
+    this.gunHeat = 0;
+    this.gunSpin = 0;
+    this.gunAmmo = s.mag || 0;
+    this._syncGunHud(s);
+  }
 
-    SFX.shot();
-    this.world.addShake(4.5);
+  /** 按下瞬间的那一发（保证手感零延迟；连发枪的后续子弹交给 _updateGun） */
+  _tapFire() {
+    if (this.state !== STATE.AIR) return;
+    const s = this.gunStat;
+    if (this.gunReloadT > 0 || this.gunCd > 0) return;
+    if (this.gun?.mech === 'burst' && s.mag && this.gunAmmo <= 0) { this._startReload(s); return; }
+    this._shoot(s);
+    this._syncGunHud(s);
+  }
 
-    const radius = TUNING.blastRadius(lv);
-    const dmg = TUNING.damage(lv);
-    this.world.burstExplosion(w.x, w.y, radius);
+  /**
+   * 每帧推进枪械状态：冷却 / 换弹 / 预热 / 过热，并在"该开火"的时候开火。
+   * 单点枪（single / pierce）在这里**只降冷却、不开火** —— 那就是"不支持长按连发"。
+   */
+  _updateGun(dt) {
+    const g = this.gun;
+    const s = gunStats(g.id, this.gunLv);
 
+    if (this.gunCd > 0) this.gunCd = Math.max(0, this.gunCd - dt);
+
+    // ── 换弹 / 强制冷却：这段时间什么都打不出去 ──
+    if (this.gunReloadT > 0) {
+      this.gunReloadT -= dt;
+      if (this.gunReloadT <= 0) {
+        this.gunReloadT = 0;
+        if (s.mag) this.gunAmmo = s.mag;
+        this.gunHeat = 0;
+        SFX.reload();
+      }
+      this._syncGunHud(s);
+      return;
+    }
+
+    const holdable = g.mech === 'auto' || g.mech === 'burst' || g.mech === 'laser';
+    if (!this.input.pointerDown || !holdable) {
+      // 松手（或者这本来就是单点枪）→ 预热与激光递增清零。
+      // 激光的递增**必须**清零：不清的话"点一下停一下"也能一直吃满加成，
+      // "越照越疼"就变成了"免费送满伤"。
+      this.gunSpin = 0;
+      if (g.mech === 'laser') this.gunHeat = 0;
+      this._syncGunHud(s);
+      return;
+    }
+
+    if (g.mech === 'auto') this.gunSpin = Math.min(s.spinup, this.gunSpin + dt);
+
+    // 激光：先累计照射时长，再判过热。顺序不能反 ——
+    // 反了的话"刚好照满"的那一帧会先结算一次伤害再过热，多白打一下。
+    if (g.mech === 'laser') {
+      this.gunHeat += dt;
+      if (s.mag && this.gunHeat >= s.mag) { this._startReload(s); this._syncGunHud(s); return; }
+    }
+
+    if (this.gunCd > 0) { this._syncGunHud(s); return; }
+    if (g.mech === 'burst' && s.mag && this.gunAmmo <= 0) { this._startReload(s); this._syncGunHud(s); return; }
+
+    this._shoot(s);
+    this._syncGunHud(s);
+  }
+
+  _startReload(s) {
+    if (!s.reload || this.gunReloadT > 0) return;
+    this.gunReloadT = s.reload;
+    this.gunCd = 0;
+    // 用一声低闷的"咔"而不是 deny() 的失败音：换弹 / 过热是**正常流程**
+    // （Uzi 每 9 发就要换一次），用失败音会让玩家以为自己操作错了。
+    SFX.thud();
+  }
+
+  /** 真正打出一发（或一次齐射）。`s` 是本枪当前档位的数值。 */
+  _shoot(s) {
+    const g = this.gun;
+    const p = this._aimPoint();
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+
+    // 最终伤害 = 枪械档位伤害 × 攻击力倍率（全局那一项升级）
+    let dmg = s.damage * this.gunMul;
+    // 激光：伤害随连续照射时间递增，×rampMax 封顶（见 GUNS.laser 的注释）
+    if (g.mech === 'laser') dmg *= 1 + Math.min(s.rampMax, s.ramp * this.gunHeat);
+
+    // 冷却：加特林在转速没上来之前射速减半（冷机 2× 间隔 → 全速 1×）
+    let cd = s.cooldown;
+    if (g.mech === 'auto' && s.spinup > 0) {
+      cd *= 1 + (1 - Math.min(1, this.gunSpin / s.spinup));
+    }
+    this.gunCd = cd;
+
+    if (g.mech === 'burst') this.gunAmmo = Math.max(0, this.gunAmmo - 1);
+
+    // 音效：激光每 0.15s 结算一次，逐次播音会变成噪音，只在"刚开火"那一下响
+    if (g.mech === 'laser') { if (this.gunHeat < 0.03) SFX.shot(); }
+    else if (g.mech === 'pierce') SFX.thud();
+    else SFX.shot();
+
+    switch (g.mech) {
+      case 'shotgun': this._shootShotgun(p, s, dmg); break;
+      case 'pierce': this._shootPierce(p, s, dmg); break;
+      case 'laser': this._shootLaser(p, s, dmg); break;
+      default: this._shootBlast(p, s, dmg, g.mech === 'single'); break;
+    }
+  }
+
+  /** 单发 / 连发的普通弹：瞄准点上一个爆炸圈 */
+  _shootBlast(p, s, dmg, heavy) {
+    this.world.addShake(heavy && s.radius >= 50 ? 9 : 4.5);
+    this.world.burstExplosion(p.x, p.y, s.radius);
+    this._damageInRadius(p.x, p.y, s.radius, dmg, heavy);
+  }
+
+  /**
+   * 散弹枪：一次打出 `pellets` 颗弹丸，以瞄准点为圆心铺开。
+   *
+   * 第一颗永远正中（保证"瞄准了就有反馈"），其余按随机角度+随机距离散开 ——
+   * 用固定角度的话每次开火图案完全一样，看起来像"一个会转的图形"而不是霰弹。
+   * 覆盖直径 ≈ 2×(spread + radius)，比手枪大得多，这就是它"大范围"的全部含义。
+   */
+  _shootShotgun(p, s, dmg) {
+    this.world.addShake(7);
+    const n = Math.max(1, s.pellets);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.9;
+      const d = i === 0 ? 0 : s.spread * (0.5 + Math.random() * 0.5);
+      const px = p.x + Math.cos(a) * d;
+      const py = p.y + Math.sin(a) * d;
+      this.world.burstExplosion(px, py, s.radius);
+      // quiet = true：一次齐射已经加过震屏了，不要 6 颗弹丸各加一次
+      this._damageInRadius(px, py, s.radius, dmg, true);
+    }
+  }
+
+  /** 激光：从画面下方射向瞄准点的一条持续光柱 */
+  _shootLaser(p, s, dmg) {
+    const vr = this.world.viewRange();
+    const x0 = this.world.camX;
+    const y0 = vr.bottom - 12;
+    // 伤害圈画在瞄准点上（判定和视觉一致），光柱只是"看得见的弹道"
+    this.world.burstBeam(x0, y0, p.x, p.y, Math.max(3, s.radius * 0.55), 0xff5577, 0.09);
+    this.world.burstExplosion(p.x, p.y, s.radius);
+    this.world.addShake(3.2);
+    this._damageInRadius(p.x, p.y, s.radius, dmg, true);
+  }
+
+  /**
+   * 鱼叉：从画面下方（船的位置）朝瞄准方向甩出一条贯穿屏幕的直线，
+   * **线上的鱼全部命中** —— 这就是它和"爆炸圈"的根本区别：
+   * 爆炸吃的是"点周围的密度"，鱼叉吃的是"排成一条线的顺序"。
+   */
+  _shootPierce(p, s, dmg) {
+    const vr = this.world.viewRange();
+    const x0 = this.world.camX;
+    const y0 = vr.bottom - 20;
+    let dx = p.x - x0, dy = p.y - y0;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 0.001)) return;
+    dx /= len; dy /= len;
+    const L = this.world.viewH * 2.6;
+    const x1 = x0 + dx * L, y1 = y0 + dy * L;
+
+    this.world.addShake(6);
+    this.world.burstBeam(x0, y0, x1, y1, Math.max(3, s.radius * 0.9), 0xbfe8ff, 0.24);
+
+    for (const f of this.airFish) {
+      if (f.state !== FISH_STATE.AIR) continue;
+      const fp = f.mesh.position;
+      if (distToSegment(fp.x, fp.y, x0, y0, x1, y1) > s.radius + f.radius) continue;
+      this._applyDamage(f, dmg);
+    }
+    this.world.addShake(2.2);
+  }
+
+  /** 对一个圆内的所有空中鱼结算伤害 */
+  _damageInRadius(x, y, radius, dmg, quiet = false) {
     let hitAny = false;
     for (const f of this.airFish) {
       if (f.state !== FISH_STATE.AIR) continue;
       const p = f.mesh.position;
-      const d = Math.hypot(p.x - w.x, p.y - w.y);
-      // 爆炸圈就是判定圈：只要圈碰到鱼身，就是满额伤害。
-      // （不做距离衰减 —— 否则 1 级打不死 1 血小鱼，手感会非常别扭）
-      if (d > radius + f.radius) continue;
+      // 爆炸圈就是判定圈：圈碰到鱼身就是满额伤害，不做距离衰减
+      //（做了衰减之后低伤害枪会变成"看着打中了却没掉血"，手感非常别扭）
+      if (Math.hypot(p.x - x, p.y - y) > radius + f.radius) continue;
       hitAny = true;
-      if (f.damage(dmg) <= 0) {
-        this._hitFish(f);
-      } else {
-        // 中弹没死 → 再往天上顶一段（需求④）。
-        // 血越厚顶得越高，顺便告诉玩家"还差几枪"，免得以为打中了没反应。
-        f.knockUp(TUNING.knockUpBase + f.hp * TUNING.knockUpPerHp, 0);
-        this.world.burstSparks(p.x, p.y, 6, 0.7);
-        const shots = Math.max(1, Math.ceil(f.hp / dmg));
-        this.ui.floatText(p.x, p.y + 10 * MODEL_SCALE, `还差 ${shots} 枪`, 'sm');
-      }
+      this._applyDamage(f, dmg);
     }
-    if (hitAny) this.world.addShake(2.2);
+    if (hitAny && !quiet) this.world.addShake(2.2);
+    return hitAny;
+  }
+
+  /**
+   * 一条鱼中弹：死了走结算，没死就往上顶一段 + 报"还差几枪"。
+   *
+   * ⚠ `knockT` 是**逐鱼的上顶冷却**（0.3s）。没有它的话，连发枪（加特林 13 发/秒）
+   *   会把每次的初速**累加**到同一条鱼上：knockUp 是 `vy = max(vy,0) + boost`，
+   *   一秒能叠到 2000+，鱼会直接飞出大气层。有了它，"血厚 → 被打得越来越高"
+   *   这个手感照样成立（每秒最多顶 3 次），但不会失控。
+   *   同一个计时器顺便节流"还差 N 枪"的飘字 —— 否则连发枪会刷屏。
+   */
+  _applyDamage(f, dmg) {
+    const p = f.mesh.position;
+    if (f.damage(dmg) <= 0) { this._hitFish(f); return; }
+
+    if (!(f.knockT > 0)) {
+      f.knockT = 0.3;
+      f.knockUp(TUNING.knockUpBase + Math.min(f.hp, TUNING.knockUpMaxHp) * TUNING.knockUpPerHp, 0);
+      this.world.burstSparks(p.x, p.y, 6, 0.7);
+      const shots = Math.max(1, Math.ceil(f.hp / Math.max(0.05, dmg)));
+      this.ui.floatText(p.x, p.y + 10 * MODEL_SCALE, `还差 ${shots} 枪`, 'sm');
+    }
+  }
+
+  /** 把枪械状态推给 HUD（每帧最多一次，不重建 DOM 子树） */
+  _syncGunHud(s) {
+    const g = this.gun;
+    this.ui.setGunState({
+      id: g.id, name: g.name, icon: g.icon, mech: g.mech,
+      level: this.gunLv,
+      mag: s.mag, ammo: this.gunAmmo,
+      reloadT: this.gunReloadT, reloadMax: s.reload || 0,
+      heat: this.gunHeat, heatMax: s.mag || 0,
+      ramp: s.ramp, rampMax: s.rampMax,
+      mul: this.gunMul,
+    });
   }
 
   _hitFish(f) {
@@ -1055,8 +1414,9 @@ class Game {
   }
 
   _updateAir(dt, t) {
-    if (this.fireCd > 0) this.fireCd -= dt;
     this.airT += dt;
+    // 枪械：冷却 / 换弹 / 预热 / 过热全在这里推进，连发枪的开火也在这里发生
+    this._updateGun(dt);
 
     // 鸟：在相机视野两侧掠过（飞进太空就没有鸟了）
     this.birdT -= dt;
@@ -1078,6 +1438,7 @@ class Game {
     // 空中鱼
     for (const f of this.airFish) {
       if (f.state !== FISH_STATE.AIR) continue;
+      if (f.knockT > 0) f.knockT -= dt;      // 逐鱼的上顶冷却（见 _applyDamage）
       f.update(dt, t, this.world.viewRange());
       if (f.mesh.position.y > this.maxAltReached) this.maxAltReached = f.mesh.position.y;
       if (f.mesh.position.y <= WORLD.surfaceY) {
@@ -1191,6 +1552,7 @@ class Game {
     this.state = STATE.RESULT;
     this.ui.showHud(false);
     this.ui.showPhoneBtn(false);
+    this.ui.showGunBar(false);
     this.ui.setCombo(0, 1);
     this.ui.setHint('');
     this.ui.setCatchVisible(false);

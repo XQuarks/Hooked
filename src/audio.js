@@ -101,6 +101,16 @@ export const SFX = {
     noise({ dur: 0.16, gain: 0.36, f0: 3400, f1: 220, q: 0.8 });
     tone({ type: 'square', f0: 220, f1: 60, dur: 0.1, gain: 0.18 });
   },
+  /**
+   * 换弹完成 / 激光冷却结束。
+   *
+   * 为什么不用 `deny()` 那种"卡壳"音：换弹是**正常流程**（Uzi 每 9 发就要换一次），
+   * 用失败音会让玩家以为自己按错了。两声干脆的金属"咔哒"才读得出"我又能打了"。
+   */
+  reload() {
+    noise({ dur: 0.07, gain: 0.2, f0: 2600, f1: 900, q: 1.2 });
+    tone({ type: 'square', f0: 340, f1: 260, dur: 0.06, gain: 0.13, delay: 0.05 });
+  },
   /** 命中鱼：连击越高音越高 */
   hit(combo = 0) {
     const f = 520 * Math.pow(1.09, Math.min(combo, 20));

@@ -723,16 +723,23 @@ try {
   await rafWait(300);
   const f5 = J(await ev(`JSON.stringify((()=>{
     const apps = [...document.querySelectorAll('#pHome .p-app-item')];
-    const grid = getComputedStyle(document.querySelector('#pHome .p-grid')).gridTemplateColumns.split(' ').length;
+    const gridEl = document.querySelector('#pHome .p-grid');
+    const grid = getComputedStyle(gridEl).gridTemplateColumns.split(' ').length;
+    const widest = Math.max(...apps.map(a=>Math.round(a.getBoundingClientRect().width)));
+    // v0.4 加了第 5 个 App（枪店）之后，这一行会不会把手机面板顶宽？
+    // 只数"有几个"是量不出这个的 —— 必须量**最右边界和网格右边界之差**。
+    const right = Math.max(...apps.map(a=>Math.round(a.getBoundingClientRect().right)));
+    const gridRight = Math.round(gridEl.getBoundingClientRect().right);
     const w = document.querySelector('#pHome .p-widget .p-w-depth');
     const sub = [...document.querySelectorAll('#pHome .p-w2-sub span')].map(e=>e.textContent);
-    return { n: apps.length, ids: apps.map(a=>a.dataset.app), grid,
+    return { n: apps.length, ids: apps.map(a=>a.dataset.app), grid, widest, overflow: right - gridRight,
       depth: w && w.textContent, sub, title: document.querySelector('#pHome .p-w-name').textContent };})())`));
-  check('F6 桌面 4 个 App 排成一行（4 列），地图小部件显示的是当前这张图',
-    f5.n === 4 && f5.ids.join(',') === 'shop,codex,route,settings' && f5.grid === 4
+  check('F6 桌面 5 个 App（4 列换行、不横向溢出），地图小部件显示的是当前这张图',
+    f5.n === 5 && f5.ids.join(',') === 'shop,gunshop,codex,route,settings' && f5.grid === 4
+    && f5.overflow <= 0
     && f5.title === '冰封极地' && /本图最深/.test(f5.depth || '')
     && f5.sub.some((s) => /1240m/.test(s)),
-    `${f5.n} 个 App / ${f5.grid} 列 · ${f5.title} · ${f5.depth} · ${f5.sub.join(' ')}`);
+    `${f5.n} 个 App / ${f5.grid} 列 · 最宽 ${f5.widest}px · 横向溢出 ${f5.overflow}px · ${f5.title} · ${f5.depth} · ${f5.sub.join(' ')}`);
 
   await ev(`(()=>{ const g=window.__game; g.closePhone(); g.showIdle(); return 'ok';})()`);
 

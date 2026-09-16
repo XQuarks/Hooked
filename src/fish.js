@@ -529,6 +529,10 @@ export class Fish {
     // 被「鱼护」挤下鱼线后的短暂免疫（秒）。> 0 时上升阶段的扫掠不会把它重新串上，
     // 否则它会卡在鱼钩旁边被反复勾住/挣脱。
     this.immuneT = 0;
+    // 被枪打中后「上顶」的冷却（秒）。连发枪（加特林 13 发/秒）如果不做这个限制，
+    // knockUp 的 `vy = max(vy,0) + boost` 会在一秒里叠加到两千多 —— 鱼直接飞出大气层。
+    // 见 game.js 的 _applyDamage。
+    this.knockT = 0;
     // 稀有度（普通 / 银色 / 金色 / 王冠），在 reset() 里逐条抽签
     this.rarity = RARITY[0];
 
@@ -577,6 +581,7 @@ export class Fish {
     this.capped = false;
     this.hitFlash = 0;
     this.immuneT = 0;
+    this.knockT = 0;
     // 血量取自鱼种定义（图鉴要如实显示），没有定义才退回体型推算
     this.hp = Number.isFinite(d.hp) ? d.hp : calcHp(this.radius);
     this.maxHp = this.hp;
@@ -629,6 +634,7 @@ export class Fish {
     this.spinY = (Math.random() - 0.5) * 9;
     this.hitFlash = 0;
     this.hp = this.maxHp;
+    this.knockT = 0;      // 抛向天空时清掉上顶冷却，第一枪立刻就能把它顶起来
     this.airX = Number.isFinite(originX) ? originX : this.mesh.position.x;
     this.airY = Number.isFinite(originY) ? originY : WORLD.surfaceY + 4 * MODEL_SCALE;
     this.mesh.position.set(this.airX, this.airY, 2);

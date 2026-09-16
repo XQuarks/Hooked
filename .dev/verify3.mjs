@@ -297,11 +297,22 @@ try {
   const air = J(await ev(`JSON.stringify({
     state: window.__game.state,
     airFish: window.__game.airFish.length,
-    hasGun: !!window.__game.gun,
-    gunKeys: Object.keys(window.__game).filter(k=>/gun/i.test(k)),
+    gun: window.__game.gun.id,
+    mech: window.__game.gun.mech,
+    cd: window.__game.gunCd,
+    ammo: window.__game.gunAmmo,
+    reload: window.__game.gunReloadT,
+    heat: window.__game.gunHeat,
+    spin: window.__game.gunSpin,
+    barOn: document.getElementById('gunBar').classList.contains('on'),
   })`));
   check('T19 上升到水面进入空中阶段', air.state === 'air' || air.state === 'result', 'state=' + air.state);
-  check('T20 不再有武器外观对象', air.hasGun === false && air.gunKeys.length === 0, `gun=${air.hasGun} keys=${air.gunKeys}`);
+  // ⚠ v0.4 改写了这条：旧版断言的是「**没有**武器对象」（当时枪只是"点击处爆炸"，
+  //   屏幕上不画枪）。现在枪械是一等公民（7 把枪 + 5 级 + 枪店），断言反过来 ——
+  //   验的是"进空中时枪械状态被正确初始化了，而且枪械条出现了"。
+  check('T20 空中阶段初始化枪械状态 + 枪械条出现',
+    ['cd', 'ammo', 'reload', 'heat', 'spin'].every((k) => Number.isFinite(air[k])) && air.barOn === true,
+    `枪=${air.gun}(${air.mech}) cd=${air.cd} ammo=${air.ammo} reload=${air.reload} heat=${air.heat} 枪械条=${air.barOn}`);
 
   // ═══════════════════════════════════════════════════════
   // T21 空中镜头不跟随河豚

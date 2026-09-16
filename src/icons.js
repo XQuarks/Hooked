@@ -231,6 +231,73 @@ export const GLYPH = {
   iceberg: `<path fill="currentColor" d="M12 2.6 15.8 8.9H8.2Z"/>
   <path fill="currentColor" opacity="0.5"
     d="M3.2 9.6h17.6c-.6 6.1-4.1 10.2-8.8 10.2S3.8 15.7 3.2 9.6Z"/>`,
+
+  // ── 枪械（v0.4 枪店）────────────────────────────────────────
+  //
+  // 七把枪必须是**七种不同的剪影**，不能靠"多一根线"来区分：
+  // 它们在 19px 的商店行里要一眼认出谁是谁，而 19px 下细节全部糊掉，
+  // 只有"整体轮廓"能传递信息。所以每把枪都绑一个**夸张的特征**：
+  //   手枪=短 + 斜握把 / 散弹=最长最细的枪管 + 前护木 / Uzi=枪身下挂一根长弹匣
+  //   鱼叉=带倒钩的叉头 / 加特林=圆形弹鼓 + 双管 / 激光=发射口 + 淡色光束
+  //   巴雷特=枪管上方一具瞄准镜 + 枪口制退器
+  //
+  // ⚠ 一律 `fill="currentColor"`（激光的光束用 opacity 压淡），不要写死颜色 ——
+  //   这些图标既出现在深色 App 图标底上，也出现在浅色的商店行里。
+  'gun-pistol': `<g fill="currentColor">
+    <path d="M5.4 7.6h12.4a1.4 1.4 0 0 1 1.4 1.4v2.2H5.4Z"/>
+    <path d="M6.2 11.2h4.8l-2.1 7.4H4.9Z"/>
+    <path d="M18.2 8.8h2.4v1.4h-2.4Z"/>
+  </g>`,
+  'gun-shotgun': `<g fill="currentColor">
+    <path d="M1.8 9.4 4.4 10v3l-2.6.6Z"/>
+    <path d="M4.4 10.2h17.2a1 1 0 0 1 1 1v1.6H4.4Z"/>
+    <path d="M9.6 12.8h6v2.6h-6Z"/>
+    <path d="M5 12.8h3.4l-.8 4.6H5Z"/>
+  </g>`,
+  'gun-uzi': `<g fill="currentColor">
+    <path d="M5.4 8.8h12.6a1.2 1.2 0 0 1 1.2 1.2v2.6H5.4Z"/>
+    <path d="M19.2 9.8h2.8v1.6h-2.8Z"/>
+    <path d="M7.2 12.6h3.6v7.6H7.2Z"/>
+    <path d="M11.6 12.6h3.2l-1.3 4.4h-1.9Z"/>
+  </g>`,
+  'gun-harpoon': `<g fill="currentColor">
+    <path d="M2.6 11.2h12.2v2.4H2.6Z"/>
+    <path d="M14.8 9.4 21.8 12.4 14.8 15.4Z"/>
+    <path d="M14.6 6.8 17 9 14.6 11.2Z" opacity="0.85"/>
+    <path d="M14.6 12.8 17 15 14.6 17.2Z" opacity="0.85"/>
+    <path d="M5.6 13.6h3.4v3.8H5.6Z"/>
+  </g>`,
+  // 加特林：弹鼓（带轴心）+ 两根粗管。**不要画三根细管** —— 19px 下那两道
+  // 0.5px 的缝会被抗锯齿吃掉，整个图标糊成一块方砖，反而认不出是转管枪。
+  'gun-gatling': `<g fill="currentColor">
+    <circle cx="8" cy="12" r="4.8"/>
+    <circle cx="8" cy="12" r="1.7" fill="#000" opacity="0.32"/>
+    <path d="M12.6 8.2h8.8v3.1h-8.8Z"/>
+    <path d="M12.6 12.7h8.8v3.1h-8.8Z"/>
+    <path d="M1.6 10.3h4.2v3.4H1.6Z"/>
+  </g>`,
+  'gun-laser': `<g fill="currentColor">
+    <path d="M3.2 8.6h6.4v6H3.2Z"/>
+    <path d="M4.8 14.6h3.2v4.2H4.8Z"/>
+    <path d="M9.6 10.4h3.2v2.4H9.6Z"/>
+    <path d="M12.8 10.6 22.8 12 12.8 13.4Z" opacity="0.45"/>
+    <path d="M12.8 11.4h9.4v1.2h-9.4Z" opacity="0.85"/>
+  </g>`,
+  'gun-barrett': `<g fill="currentColor">
+    <path d="M3.4 9.4h16.4v3.2H3.4Z"/>
+    <path d="M1.2 8.6 3.4 9.4v3.2l-2.2-.7Z"/>
+    <path d="M19.8 8.4h2.8v5.2h-2.8Z"/>
+    <path d="M7.8 5.6h5.4v2.2H7.8Z"/>
+    <path d="M9.4 7.8h2v1.6h-2Z" opacity="0.8"/>
+    <path d="M7.4 12.6h3.2v4.8H7.4Z"/>
+  </g>`,
+  // 枪店 App：左轮。转轮那一圈是它和 Uzi 的唯一区别，也是 19px 下还认得出的特征
+  gunshop: `<g fill="currentColor">
+    <path d="M4.4 8.6h11.4a1.4 1.4 0 0 1 1.4 1.4v2.6H4.4Z"/>
+    <circle cx="8.8" cy="10.6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M17.2 9.4h3.4v2.2h-3.4Z"/>
+    <path d="M6.6 12.6h4l-1.8 7.2H5.2Z"/>
+  </g>`,
 };
 
 /** 取一个单色图标（size 单位 px） */

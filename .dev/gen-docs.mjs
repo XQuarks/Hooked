@@ -37,6 +37,7 @@ const {
   UPGRADES, UPGRADE_ORDER, MAX_LEVEL, GROWTH, upgradeCost, LEVELS,
   FISH_DENSITY, HAZARD_SPAWN, SPAWN_TOP_MARGIN, MODEL_SCALE,
   ICEBERG, ALTITUDE_BANDS, DEEP, TUNING, SAVE_KEY,
+  GUNS, GUN_ORDER, GUN_MAX_LEVEL, GUN_GROWTH, gunById, gunStats, gunUpgradeCost,
 } = C;
 
 // ───────────────────────────── 小工具 ─────────────────────────────
@@ -366,7 +367,7 @@ function curveKeysOf(key) {
     case 'line': return ['maxDepth'];
     case 'hook': return ['hookRadius'];
     case 'sinker': return ['descendSpeed'];
-    case 'power': return ['blastRadius', 'damage'];
+    case 'power': return ['gunPower'];
     case 'lamp': return ['lampRadius', 'lampPower'];
     case 'winch': return ['ascendSpeed'];
     case 'creel': return ['creelLimit'];
@@ -612,6 +613,127 @@ ${ZONES.map((z) => `| ${MAP_NAME.get(z.map)} | ${z.name} | **${z.nick}** | ${z.t
   return parts.join('\n');
 }
 
+// ───────────────────────────── 06 枪械 ─────────────────────────────
+
+function doc06() {
+  const parts = [];
+  parts.push(header('枪械 · 数值表', {
+    summary: `全部 ${GUNS.length} 把枪 × ${GUN_MAX_LEVEL + 1} 档（Lv0~Lv${GUN_MAX_LEVEL}）的机制、数值与升级成本。**数字由 \`src/config.js\` 的 \`GUNS\` 生成，不要手改。**`,
+    status: `与代码同步（生成自 \`src/config.js\`）。\`GUN_GROWTH = ${GUN_GROWTH}\`，每把枪可升级 ${GUN_MAX_LEVEL} 次。`,
+    reader: '想调枪械手感 / 平衡、或要加第 8 把枪的开发者。',
+    related: '[`docs/README.md`](./README.md)（索引）· [`02-鱼类图鉴.md`](./02-鱼类图鉴.md)（血量）· [`03-升级与成本.md`](./03-升级与成本.md)（攻击力）',
+  }));
+
+  const MECH_DESC = {
+    single: '单点（**不支持长按连发**）',
+    burst: '弹匣连发（打空自动换弹）',
+    auto: '持续连发（无弹匣，有转速预热）',
+    laser: '持续照射（伤害随照射时间递增，会过热）',
+    pierce: '直线穿透（命中弹道上的所有鱼）',
+  };
+
+  const mechRows = GUNS.map((g) =>
+    `| **${g.name}** \`${g.id}\` | \`${g.mech}\` | ${MECH_DESC[g.mech] || g.mech} | ${g.price === 0 ? '初始拥有' : fmt(g.price)} | ${g.desc} |`);
+
+  parts.push(`## 1. 机制速览
+
+| 枪 | \`mech\` | 机制 | 价格 | 一句话 |
+|---|---|---|---:|---|
+${mechRows.join('\n')}
+
+> 「攻击力」升级（渔具店）是**所有枪共用的伤害倍率**，见 \`LEVELS.gunPower\`：
+> Lv0 = ×${LEVELS.gunPower[0].toFixed(2)} → Lv${MAX_LEVEL} = ×${LEVELS.gunPower[MAX_LEVEL].toFixed(2)}。
+> 它**只乘伤害，不乘半径** —— 半径是每把枪的身份，全局放大会把七把枪的差别抹平。
+
+## 2. 数值曲线（每把枪 6 档）
+`);
+
+  const LV_HEAD = Array.from({ length: GUN_MAX_LEVEL + 1 }, (_, i) => 'Lv' + i);
+  // 直接拼「单元格数组」再交给 table()，不要先拼成 markdown 行再 split 回来 ——
+  // 后者在任何一个数值里出现 ` | ` 时就会把列切错，而且错了不报错。
+  const statRows = [];
+  for (const g of GUNS) {
+    const push = (label, arr) => statRows.push([label, ...arr.map(String)]);
+    push(`**${g.name}** · 伤害/发`, g.dmg);
+    push('　范围（世界单位）', g.rad);
+    push('　间隔（秒）', g.cd);
+    if (g.mag) {
+      push(`　${g.mech === 'laser' ? '过热时长（秒）' : '弹匣（发）'}`, g.mag);
+      push(`　${g.mech === 'laser' ? '强制冷却（秒）' : '换弹（秒）'}`, g.reload);
+    }
+  }
+  parts.push(table([['枪 / 数值', ...LV_HEAD], ...statRows]));
+
+  const paramRows = GUNS.filter((g) => g.pellets || g.spinup || g.ramp).map((g) => {
+    const p = [];
+    if (g.pellets) p.push(`弹丸数 ${g.pellets} · 散布半径 ${g.spread} 世界单位`);
+    if (g.spinup) p.push(`转速预热 ${g.spinup}s（预热期射速减半）`);
+    if (g.ramp) p.push(`每秒伤害递增 ×(1 + ramp·t)，ramp = [${g.ramp.join(', ')}]，上限 ×${(1 + g.rampMax).toFixed(1)}`);
+    return `| **${g.name}** | ${p.join('；')} |`;
+  });
+  parts.push(`
+机制专属参数（不随等级变化，写在 \`GUNS\` 表里）：
+
+| 枪 | 参数 |
+|---|---|
+${paramRows.join('\n')}
+
+## 3. 升级成本
+
+\`\`\`
+gunUpgradeCost(id, lv) = round(upBase × ${GUN_GROWTH}^lv)     lv >= ${GUN_MAX_LEVEL} 时 = Infinity
+\`\`\`
+`);
+
+  const costRows = GUNS.map((g) => {
+    const c = (lv) => gunUpgradeCost(g.id, lv);
+    const sum = c(0) + c(1) + c(2) + c(3) + c(4);
+    return [`**${g.name}**`, fmt(g.upBase), fmt(c(0)), fmt(c(1)), fmt(c(2)), fmt(c(3)), fmt(c(4)), fmt(sum), fmt(sum + g.price)];
+  });
+  const totalUp = GUNS.reduce((a, g) => a + [0, 1, 2, 3, 4].reduce((s, lv) => s + gunUpgradeCost(g.id, lv), 0), 0);
+  const totalAll = GUNS.reduce((a, g) => a + g.price + [0, 1, 2, 3, 4].reduce((s, lv) => s + gunUpgradeCost(g.id, lv), 0), 0);
+  parts.push(table([
+    ['枪', '`upBase`', 'Lv0→1', 'Lv1→2', 'Lv2→3', 'Lv3→4', 'Lv4→5', '升满累计', '买枪 + 升满'],
+    ...costRows,
+    ['—', '—', '—', '—', '—', '—', '—', `**${fmt(totalUp)}**`, `**${fmt(totalAll)}**`],
+  ]));
+
+  const p0 = gunStats('pistol', 0);
+  const hpRows = ZONES.filter((z) => z.map === DEFAULT_MAP.id).map((z) => {
+    const pool = SPECIES.filter((s) => s.zones.includes(z.id));
+    const lo = Math.min(...pool.map((s) => s.hp));
+    const hi = Math.max(...pool.map((s) => s.hp));
+    return `| ${z.nick} | ${lo} ~ ${hi} | ${Math.ceil(lo / p0.damage)} ~ ${Math.ceil(hi / p0.damage)} 枪 |`;
+  });
+  parts.push(`
+## 4. 和鱼的血量怎么对上
+
+**未升级的普通手枪：伤害 ${p0.damage} / 范围 ${p0.radius} / 间隔 ${p0.cooldown}s。**
+所有鱼的血量都是照着"这一把枪打几枪"标的（见 [\`02-鱼类图鉴.md\`](./02-鱼类图鉴.md) 的血量列）：
+
+| 海域（${DEFAULT_MAP.name}） | 血量区间 | 手枪 Lv0 需要几枪 |
+|---|---:|---|
+${hpRows.join('\n')}
+
+> **浅层偏低、深层有高有低**是刻意的：表层 2~5（1~3 枪），
+> 深层同一层里同时有"软鱼"和"硬骨头"（例如极光长廊 9 ~ 34，差 3.8 倍）。
+> 全是硬鱼 → 手感发钝；全是软鱼 → 枪械等级失去意义。
+
+## 5. 维护约定
+
+- **数值只有 \`src/config.js\` 的 \`GUNS\` 一处**，本文由 \`.dev/gen-docs.mjs\` 生成，不要手改。
+- **加第 8 把枪**：往 \`GUNS\` 追加一项即可 —— \`GUN_ORDER\`、存档字段、枪店列表、
+  枪械条全部自动跟上（都从 \`GUNS\` 派生）。但要记得：
+  ① 在 \`icons.js\` 的 \`GLYPH\` 里加同名 \`icon\`；
+  ② 价格要排在阶梯上（枪店按 \`GUNS\` 的顺序展示）；
+  ③ 跑 \`node .dev/verify9.mjs\`（A 组会检查新枪的字段完整性与单调性）。
+- **改伤害/半径**：先想清楚"这把枪的身份是什么"（覆盖 / 爆发 / 持续 / 递增 / 穿透 / 单发重炮），
+  再动数值；改完必须重跑 \`verify9\` —— C 组是按机制逐条验行为的。
+`);
+
+  return parts.join('\n');
+}
+
 // ───────────────────────────── 写出 ─────────────────────────────
 
 const FILES = [
@@ -620,6 +742,7 @@ const FILES = [
   ['03-升级与成本.md', doc03()],
   ['04-物理与经济.md', doc04()],
   ['05-剧情与世界观.md', doc05()],
+  ['06-枪械.md', doc06()],
 ];
 
 if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });

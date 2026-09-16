@@ -163,6 +163,10 @@ try {
     // 而且不报错 —— 症状只是"鱼突然钓不上来了"（已经踩过一次：漏了 winch → 上拉速度 NaN）。
     g.save = { coins: 900, bestDepth: 200, bestAlt: 0, casts: 5, totalEarned: 900,
       levels:{line:2,hook:1,sinker:1,power:2,lamp:1,winch:1,creel:1,insurance:1,sonar:1,bait:1,rig:1},
+      // ⚠ v0.4：guns 是**必填**的第二个表。少了它，save.guns.current
+      //   会在 _tapFire / _syncGunHud 里抛异常 —— 而且症状离病因很远
+      //   （"空中阶段一开火就整个卡住、不结算"）。同一个坑在 levels 上踩过一次。
+      guns: { owned: [], current: 'pistol', levels: { pistol: 1 } },
       licenses: [],
       codex: { sardine:{n:9,best:7}, clown:{n:4,best:12}, puffer:{n:2,best:9}, tuna:{n:1,best:44} } };
     g.applyUpgrades(); g.showIdle(); return 'ok'; })()`);
@@ -193,9 +197,11 @@ try {
     const lockWhere = locked[0]?.querySelector('.cx-where')?.textContent.trim();
     const k = known.find(e=>e.querySelector('.cx-nm').textContent.includes('沙丁鱼'));
     const kHpEl = k?.querySelector('.cx-hp');
-    // 迭代 6 收尾：血量从 emoji「❤×N」换成内联 SVG，所以这里数 <svg> 个数
+    // v0.4：血量从「画 N 颗心」改成「一颗心图标 + 数字」——
+    // 血量最高到 120，画 120 颗心会直接把这一行撑爆。
     const kHpN = kHpEl ? kHpEl.querySelectorAll('svg').length : 0;
     const kHp = kHpEl?.textContent || '';
+    const hpCfg = window.__cfg.SPECIES.find(s=>s.id==='sardine').hp;
     const kValEl = k?.querySelector('.cx-val');
     const kVal = kValEl?.textContent || '';
     const kValSvg = !!kValEl?.querySelector('svg');
@@ -206,7 +212,7 @@ try {
     // 不从界面反推，直接问 config —— 加地图时这条断言自己会跟上。
     const speciesTotal = window.__cfg.SPECIES.length;
     return JSON.stringify({ n: items.length, zones, lockedN: locked.length, knownN: known.length,
-      lockNm, lockHasHp, lockHasVal, lockDesc, lockWhere, kHp, kHpN, kVal, kValSvg, kDesc, kWhere,
+      lockNm, lockHasHp, lockHasVal, lockDesc, lockWhere, kHp, kHpN, hpCfg, kVal, kValSvg, kDesc, kWhere,
       total, speciesTotal });
   })()`));
   check('C2 图鉴列出全部 20 种鱼、按 5 个海域分组',
@@ -214,9 +220,9 @@ try {
   check('C2b 分组顺序 = 海域深度顺序，海域雅称不与地图名重名（浅滩→尽头）',
     c2.zones.join(',') === '阳光浅滩,蓝色回廊,幽蓝深谷,无光深渊,海沟尽头', c2.zones.join(' → '));
   check('C3 已钓到的鱼给出 血量 / 金币 / 简介 / 所在海域',
-    c2.kHpN >= 1 && c2.kHpN <= 5 && !c2.kHp.trim()
+    c2.kHpN === 1 && Number(c2.kHp.trim()) === c2.hpCfg
       && c2.kValSvg && /\d+/.test(c2.kVal) && c2.kDesc.length > 10 && c2.kWhere.length > 4,
-    `血量 ${c2.kHpN} 颗心（SVG） ${c2.kVal.trim()}（SVG 金币=${c2.kValSvg}）· ${c2.kWhere.trim()}`);
+    `血量 ${c2.kHp.trim()}（一颗心图标 + 数字，config 里是 ${c2.hpCfg}）· ${c2.kVal.trim()}（SVG 金币=${c2.kValSvg}）· ${c2.kWhere.trim()}`);
   check('C3b 「所在海域」= 地图名 · 海域雅称（迭代 6：地图这一级进图鉴）',
     /^宁静海湾 · (阳光浅滩|蓝色回廊|幽蓝深谷|无光深渊|海沟尽头)$/.test(c2.kWhere.trim())
       && !/(表层|中层|深层|深渊|海沟)海域/.test(c2.kWhere),
@@ -319,21 +325,25 @@ try {
   check('D1b 首次钓到会写入图鉴存档', d1.codex.length === 1, `codex=${JSON.stringify(d1.codex)}`);
 
   const d2 = J(await ev(`(()=>{const g=window.__game;
-    const def = window.__cfg.SPECIES.find(s=>s.id==='tuna');   // hp 3
+    const def = window.__cfg.SPECIES.find(s=>s.id==='tuna');   // hp 9
     const f = g.fish.acquire(def); f.reset(0, 100);
     g.state = 'air'; g.airFish = [f]; g.caught = []; g.birds = []; g.airT = 0;
-    g.save.levels.power = 0; g.applyUpgrades(); g.fireCd = 0;
+    g.save.levels.power = 0; g.applyUpgrades();
+    // v0.4：开火走枪械管线（_tapFire），冷却字段也从 fireCd 改成 gunCd。
+    // 伤害不再是固定的 1 —— 它是"当前枪械档位伤害 × 攻击力倍率"，所以断言要现算。
+    g.gunCd = 0;
+    const dmg = g.gunStat.damage * g.gunMul;
     const w = g.world.screenToWorld(0.5, 0.5);
     f.launch(0, 120, w.x, w.y);
     f.vx = 0; f.vy = 120;
     const vy0 = f.vy, hp0 = f.hp;
-    g._fireAt(0.5, 0.5);
+    g._tapFire();
     const floats = [...document.querySelectorAll('#floatLayer .float-txt')].map(e=>e.textContent);
-    return JSON.stringify({ vy0, vy1: +f.vy.toFixed(1), hp0, hp1: f.hp, state: f.state, floats });
+    return JSON.stringify({ vy0, vy1: +f.vy.toFixed(1), hp0, hp1: f.hp, dmg, state: f.state, floats });
   })()`));
   check('D2 中弹未死 → 鱼被再顶向天空（竖直速度变大）',
-    d2.hp1 === d2.hp0 - 1 && d2.vy1 > d2.vy0 + 30 && d2.state === 'air',
-    `hp ${d2.hp0}→${d2.hp1}，vy ${d2.vy0}→${d2.vy1}`);
+    Math.abs(d2.hp1 - (d2.hp0 - d2.dmg)) < 1e-6 && d2.vy1 > d2.vy0 + 30 && d2.state === 'air',
+    `${d2.__err ? 'ERR ' + d2.__err + ' · ' : ''}hp ${d2.hp0}→${d2.hp1}（单发 ${d2.dmg}），vy ${d2.vy0}→${d2.vy1}`);
   check('D3 中弹未死会提示还差几枪', d2.floats.some((t)=>/还差 \d+ 枪/.test(t)),
     JSON.stringify(d2.floats));
 

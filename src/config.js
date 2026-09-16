@@ -401,28 +401,28 @@ export const ICEBERG = {
 export const SPECIES = [
   // ── 表层 Sunlit ──────────────────────────────────────────
   {
-    id: 'sardine', name: '沙丁鱼', zones: ['sunlit'], value: 6, hp: 1,
+    id: 'sardine', name: '沙丁鱼', zones: ['sunlit'], value: 6, hp: 2,
     radius: 3.2, speed: 48, weight: 30,
     desc: '成群结队的小银鱼，闪得像一把撒进水里的硬币。一枪就碎，胜在数量。',
     color: 0xdcecf8, belly: 0xffffff, stripe: 0x3f7ea8, stripeN: 1,
     body: [4.2, 1.5, 0.95], tail: [1.7, 1.6], fin: [1.3, 0.9], eye: 0.5,
   },
   {
-    id: 'clown', name: '小丑鱼', zones: ['sunlit'], value: 11, hp: 1,
+    id: 'clown', name: '小丑鱼', zones: ['sunlit'], value: 11, hp: 2,
     radius: 3.9, speed: 32, weight: 20,
     desc: '橙底白带，脸上永远挂着一副"我很忙"的表情。据说它和河豚是邻居。',
     color: 0xff6a1f, stripe: 0xfff6ea, stripeN: 3, belly: 0xffb066,
     body: [4.0, 2.1, 1.25], tail: [1.6, 1.9], fin: [1.2, 1.0], eye: 0.75,
   },
   {
-    id: 'mackerel', name: '鲭鱼', zones: ['sunlit'], value: 15, hp: 2,
+    id: 'mackerel', name: '鲭鱼', zones: ['sunlit'], value: 15, hp: 3,
     radius: 4.5, speed: 56, weight: 17,
     desc: '背上一身虎纹，游得比谁都快。身上那些亮点其实是鳞片反光。',
     color: 0x3f9fc4, stripe: 0x10344a, stripeN: 4, spots: 0x9fe4ff,
     body: [5.8, 2.0, 1.15], tail: [2.1, 2.3], fin: [1.6, 1.1], eye: 0.6,
   },
   {
-    id: 'puffer', name: '河豚', zones: ['sunlit', 'twilight'], value: 9, hp: 2,
+    id: 'puffer', name: '河豚', zones: ['sunlit', 'twilight'], value: 9, hp: 4,
     radius: 5.0, speed: 16, weight: 11,
     desc: '扣钱鱼。气鼓鼓的一颗刺球，一身黑黄警戒带。打中它会炸开，扣 30 金币还清空连击。',
     color: 0xffd23f, hazard: true, spikes: 18,
@@ -431,35 +431,35 @@ export const SPECIES = [
   },
   // ── 中层 Twilight ────────────────────────────────────────
   {
-    id: 'blobfish', name: '水滴鱼', zones: ['twilight'], value: 32, hp: 2,
+    id: 'blobfish', name: '水滴鱼', zones: ['twilight'], value: 32, hp: 5,
     radius: 5.8, speed: 12, weight: 9,
     desc: '一团粉色的忧伤。因为太懒，它干脆放弃了游泳，随波逐流。',
     color: 0xf7a8c0, belly: 0xffd9e4, bignose: 1.0, whisker: 3,
     body: [3.9, 3.3, 2.4], tail: [1.2, 1.2], fin: [0.9, 0.8], eye: 0.42,
   },
   {
-    id: 'snapper', name: '红鲷', zones: ['twilight'], value: 24, hp: 2,
+    id: 'snapper', name: '红鲷', zones: ['twilight'], value: 24, hp: 4,
     radius: 5.0, speed: 36, weight: 19,
     desc: '通红一条，背鳍像一排小刀。眼睛大得有点凶，看久了会被它瞪回来。',
     color: 0xff3d3d, belly: 0xffb0a0, stripe: 0xa80000, stripeN: 1, fangs: 4,
     body: [4.9, 2.7, 1.35], tail: [1.9, 2.5], fin: [1.9, 1.6], eye: 0.85,
   },
   {
-    id: 'butterfly', name: '蝴蝶鱼', zones: ['twilight'], value: 28, hp: 2,
+    id: 'butterfly', name: '蝴蝶鱼', zones: ['twilight'], value: 28, hp: 4,
     radius: 4.2, speed: 40, weight: 14,
     desc: '扁得像一枚金币，黄底黑带，尾巴张成一柄小扇子。',
     color: 0xffd447, stripe: 0x24243a, stripeN: 3, fanTail: 1.0,
     body: [3.7, 2.9, 0.95], tail: [1.4, 2.1], fin: [1.2, 1.3], eye: 0.7,
   },
   {
-    id: 'tuna', name: '金枪鱼', zones: ['twilight'], value: 42, hp: 3,
+    id: 'tuna', name: '金枪鱼', zones: ['twilight'], value: 42, hp: 9,
     radius: 6.5, speed: 64, weight: 9,
     desc: '一枚深蓝色的鱼雷。血很厚，一枪打不死 —— 它会带着伤口继续往上窜。',
     color: 0x2f7fc4, belly: 0xd8f0ff, stripe: 0x0b2c48, stripeN: 2, spots: 0x7fd0ff,
     body: [7.4, 2.9, 1.65], tail: [2.7, 3.1], fin: [1.9, 1.3], eye: 0.7,
   },
   {
-    id: 'eel', name: '电鳗', zones: ['twilight', 'deep'], value: 55, hp: 2,
+    id: 'eel', name: '电鳗', zones: ['twilight', 'deep'], value: 55, hp: 6,
     radius: 6.2, speed: 52, weight: 10,
     desc: '扣钱鱼。黑黄相间的长条，游过的地方水都在发麻。打中它会被电到扣 30 金币。',
     color: 0xf2c400, hazard: true, stripe: 0x101010, stripeN: 5,
@@ -468,7 +468,7 @@ export const SPECIES = [
   },
   // ── 深层 Deep ────────────────────────────────────────────
   {
-    id: 'lantern', name: '灯笼鱼', zones: ['deep'], value: 66, hp: 2,
+    id: 'lantern', name: '灯笼鱼', zones: ['deep'], value: 66, hp: 6,
     radius: 4.2, speed: 32, weight: 18,
     desc: '身体两侧排着一串小灯，嘴里的牙长得收不回去。深海里最像节日的一种鱼。',
     color: 0x2b3a55, emissive: 0x7fffd4, emissiveIntensity: 0.9, glow: [5.2, 0x4fd8b0],
@@ -476,21 +476,21 @@ export const SPECIES = [
     body: [3.7, 2.2, 1.45], tail: [1.5, 1.7], fin: [1.2, 1.0], eye: 0.9,
   },
   {
-    id: 'squid', name: '深海乌贼', zones: ['deep'], value: 82, hp: 3,
+    id: 'squid', name: '深海乌贼', zones: ['deep'], value: 82, hp: 9,
     radius: 5.6, speed: 44, weight: 12,
     desc: '紫色的软体怪，五条触手一直在水里打卷。遇到危险会喷墨 —— 不过这里没人看得见。',
     color: 0xb46ad8, emissive: 0xd9a0ff, emissiveIntensity: 0.55, glow: [6.4, 0xc78cff], legs: 5,
     body: [3.2, 2.7, 2.2], tail: [2.4, 1.1], fin: [1.0, 1.0], eye: 0.95,
   },
   {
-    id: 'sword', name: '剑鱼', zones: ['deep'], value: 100, hp: 3,
+    id: 'sword', name: '剑鱼', zones: ['deep'], value: 100, hp: 16,
     radius: 7.6, speed: 76, weight: 8,
     desc: '鼻子上长着一把一米多长的剑。冲刺起来连渔船的木板都能捅穿。',
     color: 0x4a6a8c, belly: 0xe0f0ff, stripe: 0x16283a, stripeN: 2,
     bill: 4.6, body: [7.8, 2.5, 1.35], tail: [2.7, 3.1], fin: [2.4, 1.6], eye: 0.7,
   },
   {
-    id: 'lionfish', name: '狮子鱼', zones: ['deep', 'abyss'], value: 130, hp: 3,
+    id: 'lionfish', name: '狮子鱼', zones: ['deep', 'abyss'], value: 130, hp: 11,
     radius: 6.4, speed: 24, weight: 8,
     desc: '扣钱鱼。红白相间的一身毒鳍，张开来像一把烧着的扇子。碰它一下就要赔钱。',
     color: 0xff4a3d, hazard: true, stripe: 0xfff2f0, stripeN: 5, fanFin: 1.5, spikes: 12,
@@ -498,7 +498,7 @@ export const SPECIES = [
   },
   // ── 深渊 Abyss ───────────────────────────────────────────
   {
-    id: 'ghost', name: '幽灵鱼', zones: ['abyss'], value: 160, hp: 3,
+    id: 'ghost', name: '幽灵鱼', zones: ['abyss'], value: 160, hp: 8,
     radius: 5.4, speed: 36, weight: 11,
     desc: '半透明的苍白影子，能看见光从它身体里穿过去。有人说它其实是鱼的灵魂。',
     color: 0x8fe0ff, emissive: 0xbff2ff, emissiveIntensity: 0.85, glow: [6.8, 0x9fe8ff],
@@ -506,14 +506,14 @@ export const SPECIES = [
     body: [5.0, 2.7, 1.6], tail: [2.2, 2.9], fin: [1.6, 1.2], eye: 0.75,
   },
   {
-    id: 'hammerhead', name: '双髻鲨', zones: ['abyss'], value: 190, hp: 4,
+    id: 'hammerhead', name: '双髻鲨', zones: ['abyss'], value: 190, hp: 24,
     radius: 8.0, speed: 60, weight: 6,
     desc: '脑袋向两边摊开成一把锤子，眼睛长在锤子的两端。血厚得离谱。',
     color: 0x8a97a6, belly: 0xe4ecf2, hammer: true, stripe: 0x2b3a4a, stripeN: 1,
     body: [8.2, 2.7, 1.85], tail: [3.0, 3.5], fin: [2.8, 2.0], eye: 0.62,
   },
   {
-    id: 'angler', name: '鮟鱇鱼', zones: ['abyss'], value: 200, hp: 4,
+    id: 'angler', name: '鮟鱇鱼', zones: ['abyss'], value: 200, hp: 18,
     radius: 7.0, speed: 24, weight: 8,
     desc: '额头挂着一盏灯，嘴大得能吞下比自己大的东西，牙全朝里长。',
     color: 0x5a3a4a, emissive: 0xffcc55, emissiveIntensity: 0.6, lure: true,
@@ -521,7 +521,7 @@ export const SPECIES = [
     body: [4.7, 3.7, 2.85], tail: [1.8, 2.1], fin: [1.4, 1.1], eye: 0.95,
   },
   {
-    id: 'oarfish', name: '皇带鱼', zones: ['abyss'], value: 260, hp: 3,
+    id: 'oarfish', name: '皇带鱼', zones: ['abyss'], value: 260, hp: 10,
     radius: 8.5, speed: 48, weight: 5,
     desc: '一条银色的长绸带，头上顶着一撮红缨。传说看到它就预示着地震。',
     color: 0xe2ecf5, belly: 0xffffff, emissive: 0x9fe8ff, emissiveIntensity: 0.4,
@@ -529,7 +529,7 @@ export const SPECIES = [
     body: [11.0, 1.8, 0.85], tail: [2.0, 1.7], fin: [1.2, 0.9], eye: 0.55,
   },
   {
-    id: 'manta', name: '蝠鲼', zones: ['abyss'], value: 340, hp: 4,
+    id: 'manta', name: '蝠鲼', zones: ['abyss'], value: 340, hp: 26,
     radius: 9.5, speed: 52, weight: 4,
     desc: '水里的风筝。双翼展开近十米，游过去的时候像一片会动的夜。',
     color: 0x35485e, belly: 0xcfe0ee, emissive: 0x5f7fa0, emissiveIntensity: 0.5,
@@ -538,7 +538,7 @@ export const SPECIES = [
   },
   // ── 海沟 Trench ──────────────────────────────────────────
   {
-    id: 'viper', name: '毒蛇鱼', zones: ['trench'], value: 420, hp: 4,
+    id: 'viper', name: '毒蛇鱼', zones: ['trench'], value: 420, hp: 18,
     radius: 6.5, speed: 40, weight: 5,
     desc: '全身漆黑，靠一排发光的侧线在黑暗里伏击。牙长到合不上嘴。',
     color: 0x14283c, emissive: 0x66ffcc, emissiveIntensity: 0.75,
@@ -546,7 +546,7 @@ export const SPECIES = [
     body: [5.6, 2.2, 1.3], tail: [2.0, 2.2], fin: [1.4, 1.1], eye: 0.85,
   },
   {
-    id: 'goldking', name: '黄金鱼王', zones: ['trench'], value: 680, hp: 5,
+    id: 'goldking', name: '黄金鱼王', zones: ['trench'], value: 680, hp: 60,
     radius: 11.0, speed: 28, weight: 1.6,
     // ⚠ 本图的 Boss：不参与稀有度抽签（`elite: false`）。
     //   两个理由：① 它本身就已经是"稀有"了，再叠一层金边会让"金色"这个信号贬值；
@@ -554,7 +554,7 @@ export const SPECIES = [
     //      第一张图的收尾鱼会把后面所有地图的经济天花板顶穿。
     //   （和冰封极地的「极夜之王」同一条规则，见 verify8 A12。）
     elite: false, boss: true,
-    desc: '海沟底的王。通体鎏金，头顶王冠，血厚到需要打满五枪。见到它算你运气好。',
+    desc: '海沟底的王。通体鎏金，头顶王冠，普通手枪打空一整梭子都未必放得倒。',
     color: 0xffcc33, emissive: 0xffaa00, emissiveIntensity: 1.0,
     glow: [13.5, 0xffd766], crown: true, belly: 0xfff0b0, spots: 0xfff8d0,
     body: [7.2, 4.1, 2.65], tail: [2.9, 3.7], fin: [2.0, 1.6], eye: 0.95,
@@ -567,28 +567,28 @@ export const SPECIES = [
 
   // ── 浮冰浅海 Ice Shelf（0 ~ 70m）──────────────────────────
   {
-    id: 'ice-scad', name: '冰鲹', zones: ['ice-shelf'], value: 17, hp: 1,
+    id: 'ice-scad', name: '冰鲹', zones: ['ice-shelf'], value: 17, hp: 2,
     radius: 3.4, speed: 52, weight: 28, school: 6,
     desc: '冰洞口最常见的一群小银鱼，鳍边泛着淡蓝。一枪能穿两条。',
     color: 0xdff0fb, belly: 0xffffff, stripe: 0x5a9fc4, stripeN: 2, spots: 0xffffff,
     body: [4.4, 1.5, 0.95], tail: [1.8, 1.7], fin: [1.3, 0.9], eye: 0.5,
   },
   {
-    id: 'snow-crab', name: '雪蟹', zones: ['ice-shelf'], value: 26, hp: 2,
+    id: 'snow-crab', name: '雪蟹', zones: ['ice-shelf'], value: 26, hp: 5,
     radius: 4.4, speed: 22, weight: 18,
     desc: '一身白壳的横行者，八条腿在水里划得毫无章法。壳比看起来硬。',
     color: 0xf2f8ff, belly: 0xffffff, spikes: 12, legs: 6, spots: 0xcfe0ee,
     body: [3.6, 2.6, 2.4], tail: [1.0, 1.2], fin: [1.4, 1.4], eye: 0.8,
   },
   {
-    id: 'arctic-cod', name: '北极鳕', zones: ['ice-shelf'], value: 38, hp: 2,
+    id: 'arctic-cod', name: '北极鳕', zones: ['ice-shelf'], value: 38, hp: 4,
     radius: 5.2, speed: 40, weight: 16,
     desc: '灰绿底色上撒着一层浅斑，下巴挂着三根须。冷水里长大的都长得慢。',
     color: 0x9fb8ac, belly: 0xeaf6f0, stripe: 0x4a6a5c, stripeN: 3, spots: 0xd8f0e4,
     whisker: 3, body: [5.6, 2.2, 1.25], tail: [2.0, 2.2], fin: [1.5, 1.1], eye: 0.65,
   },
   {
-    id: 'ice-jelly', name: '冰水母', zones: ['ice-shelf'], value: 22, hp: 2,
+    id: 'ice-jelly', name: '冰水母', zones: ['ice-shelf'], value: 22, hp: 3,
     radius: 4.8, speed: 14, weight: 12,
     desc: '扣钱鱼。一团几乎透明的冰蓝色触手，几乎看不见，直到你撞上去。打中它会炸开扣 30 金币。',
     color: 0xbfe8ff, hazard: true, emissive: 0x8fe0ff, emissiveIntensity: 0.9,
@@ -598,28 +598,28 @@ export const SPECIES = [
 
   // ── 霜蓝水道 Ice Twilight（70 ~ 170m）────────────────────
   {
-    id: 'silver-cod', name: '银鳕', zones: ['ice-twilight'], value: 62, hp: 2,
+    id: 'silver-cod', name: '银鳕', zones: ['ice-twilight'], value: 62, hp: 6,
     radius: 5.6, speed: 36, weight: 18, school: 4,
     desc: '全身覆着一层真银似的鳞，光打上去会整条亮一下。深一点的水里最好认。',
     color: 0xdceaf5, belly: 0xffffff, stripe: 0x9fb8cc, stripeN: 2, spots: 0xffffff,
     body: [6.0, 2.3, 1.3], tail: [2.1, 2.3], fin: [1.6, 1.2], eye: 0.6,
   },
   {
-    id: 'narwhal-calf', name: '独角鲸幼崽', zones: ['ice-twilight'], value: 78, hp: 3,
+    id: 'narwhal-calf', name: '独角鲸幼崽', zones: ['ice-twilight'], value: 78, hp: 10,
     radius: 6.8, speed: 48, weight: 12,
     desc: '鼻子上顶着一根还没长开的长牙，会拿它戳冰块玩。完全不知道自己很值钱。',
     color: 0x9fb4c8, belly: 0xeaf4ff, bill: 5.2, spots: 0xd8e4f0,
     body: [7.0, 2.8, 2.0], tail: [2.6, 3.0], fin: [1.8, 1.4], eye: 0.6,
   },
   {
-    id: 'bluefin', name: '蓝鳍金枪', zones: ['ice-twilight'], value: 95, hp: 3,
+    id: 'bluefin', name: '蓝鳍金枪', zones: ['ice-twilight'], value: 95, hp: 12,
     radius: 7.2, speed: 68, weight: 10,
     desc: '冷水版的鱼雷，鳍尖一抹亮蓝。血厚、跑得快，是上升阶段最难串的一条。',
     color: 0x2f6fa8, belly: 0xcfe8f8, stripe: 0x0d2c48, stripeN: 2, spots: 0x7fc8ff,
     body: [7.6, 2.8, 1.7], tail: [2.7, 3.1], fin: [2.0, 1.4], eye: 0.7,
   },
   {
-    id: 'ice-crystal', name: '冰晶鱼', zones: ['ice-twilight'], value: 140, hp: 3,
+    id: 'ice-crystal', name: '冰晶鱼', zones: ['ice-twilight'], value: 140, hp: 9,
     radius: 5.6, speed: 28, weight: 8, school: 3,
     desc: '身上长满棱柱状的透明结晶，自己会发光。据说整条鱼就是一块长成鱼形的冰。',
     color: 0xa8e8ff, emissive: 0x6fd8ff, emissiveIntensity: 1.0, glow: [7.4, 0x8fe8ff],
@@ -629,7 +629,7 @@ export const SPECIES = [
 
   // ── 极光长廊 Ice Deep（170 ~ 300m）───────────────────────
   {
-    id: 'aurora-fish', name: '极光鱼', zones: ['ice-deep'], value: 190, hp: 3,
+    id: 'aurora-fish', name: '极光鱼', zones: ['ice-deep'], value: 190, hp: 11,
     radius: 6.0, speed: 40, weight: 12,
     desc: '通体绿紫交错的辉光，游动时像把一小段极光揣在了身上。',
     color: 0x6fe8c0, emissive: 0x7f6fff, emissiveIntensity: 0.95, glow: [8.0, 0x9f8fff],
@@ -637,7 +637,7 @@ export const SPECIES = [
     body: [5.0, 2.4, 1.5], tail: [1.9, 2.4], fin: [1.8, 1.5], eye: 0.75,
   },
   {
-    id: 'ice-eel', name: '深海冰鳗', zones: ['ice-deep'], value: 240, hp: 3,
+    id: 'ice-eel', name: '深海冰鳗', zones: ['ice-deep'], value: 240, hp: 9,
     radius: 6.6, speed: 52, weight: 10,
     desc: '一条半透明的长鞭子，体内有一条淡蓝的脊线在流动。游起来几乎没有声音。',
     color: 0xbfe0f0, emissive: 0x5fc8ff, emissiveIntensity: 0.6, glow: [6.4, 0x8fd8ff],
@@ -645,14 +645,14 @@ export const SPECIES = [
     body: [9.2, 1.5, 1.1], tail: [1.6, 1.9], fin: [1.0, 0.8], eye: 0.7,
   },
   {
-    id: 'snow-sturgeon', name: '雪原鲟', zones: ['ice-deep'], value: 310, hp: 4,
+    id: 'snow-sturgeon', name: '雪原鲟', zones: ['ice-deep'], value: 310, hp: 26,
     radius: 8.2, speed: 32, weight: 7,
     desc: '背上一排骨板，像披了件老式的铠甲。慢，但很难一枪放倒。',
     color: 0xc8d8e4, belly: 0xf0f8ff, stripe: 0x6a8496, stripeN: 4, spikes: 14,
     whisker: 4, body: [8.6, 2.4, 1.7], tail: [2.6, 3.0], fin: [1.7, 1.3], eye: 0.55,
   },
   {
-    id: 'ice-crab', name: '冰甲蟹', zones: ['ice-deep'], value: 420, hp: 4,
+    id: 'ice-crab', name: '冰甲蟹', zones: ['ice-deep'], value: 420, hp: 34,
     radius: 7.8, speed: 24, weight: 5,
     desc: '壳上结了厚厚一层冰，敲上去当当响。全身唯一的软处是那对眼睛。',
     color: 0x8fb8d0, belly: 0xd8ecf8, spikes: 18, legs: 6, spots: 0xe0f4ff,
@@ -662,14 +662,14 @@ export const SPECIES = [
 
   // ── 永冻深渊 Ice Abyss（300 ~ 460m）──────────────────────
   {
-    id: 'megalodon', name: '巨齿鲨', zones: ['ice-abyss'], value: 560, hp: 5,
+    id: 'megalodon', name: '巨齿鲨', zones: ['ice-abyss'], value: 560, hp: 48,
     radius: 9.8, speed: 60, weight: 5,
     desc: '一张嘴就是三排牙。它不在乎你钓的是什么，它只在乎你比它小。',
     color: 0x6a8496, belly: 0xdce8f0, stripe: 0x2a3a4a, stripeN: 1, fangs: 10,
     body: [9.4, 3.2, 2.2], tail: [3.4, 3.8], fin: [2.8, 2.0], eye: 0.6,
   },
   {
-    id: 'frozen-ghost', name: '冰封幽灵', zones: ['ice-abyss'], value: 700, hp: 4,
+    id: 'frozen-ghost', name: '冰封幽灵', zones: ['ice-abyss'], value: 700, hp: 15,
     radius: 6.8, speed: 36, weight: 6,
     desc: '一具被冻在冰里的轮廓，冰化了它还在游。没人愿意细看它长什么样。',
     color: 0xcfeaff, emissive: 0x9fd8ff, emissiveIntensity: 0.9, glow: [7.6, 0xbfe8ff],
@@ -677,7 +677,7 @@ export const SPECIES = [
     body: [5.4, 2.8, 1.7], tail: [2.3, 3.0], fin: [1.7, 1.3], eye: 0.75,
   },
   {
-    id: 'polar-oarfish', name: '极地皇带', zones: ['ice-abyss'], value: 880, hp: 4,
+    id: 'polar-oarfish', name: '极地皇带', zones: ['ice-abyss'], value: 880, hp: 12,
     radius: 9.2, speed: 44, weight: 4,
     desc: '一条会发光的银带子，头顶的冠是冰蓝色的。极地里管它叫"海底极光"。',
     color: 0xd8e8f5, belly: 0xffffff, emissive: 0x7fd0ff, emissiveIntensity: 0.45,
@@ -685,7 +685,7 @@ export const SPECIES = [
     body: [11.4, 1.9, 0.9], tail: [2.1, 1.8], fin: [1.2, 0.9], eye: 0.55,
   },
   {
-    id: 'frost-throat', name: '霜之喉', zones: ['ice-abyss'], value: 1150, hp: 5,
+    id: 'frost-throat', name: '霜之喉', zones: ['ice-abyss'], value: 1150, hp: 40,
     radius: 8.8, speed: 28, weight: 4,
     desc: '额头挂着一盏冷光的灯，嘴张开比身体还宽。呼出来的气在深海里也是白的。',
     color: 0x4a5a6a, emissive: 0x8fe8ff, emissiveIntensity: 0.55, lure: true,
@@ -695,7 +695,7 @@ export const SPECIES = [
 
   // ── 极夜之底 Ice Trench（460 ~ 620m）────────────────────
   {
-    id: 'frost-leviathan', name: '冰霜利维坦幼体', zones: ['ice-trench'], value: 1450, hp: 6,
+    id: 'frost-leviathan', name: '冰霜利维坦幼体', zones: ['ice-trench'], value: 1450, hp: 50,
     radius: 11.6, speed: 40, weight: 3,
     desc: '注意"幼体"两个字。它展开的双翼已经比渔船还宽了，而成体据说有一百米。',
     color: 0x7fb8d8, belly: 0xd8f0ff, emissive: 0x5fc0ff, emissiveIntensity: 0.5,
@@ -703,12 +703,12 @@ export const SPECIES = [
     body: [8.0, 3.4, 4.2], tail: [3.6, 4.2], fin: [2.6, 2.0], eye: 0.7,
   },
   {
-    id: 'polar-night-king', name: '极夜之王', zones: ['ice-trench'], value: 1900, hp: 9,
+    id: 'polar-night-king', name: '极夜之王', zones: ['ice-trench'], value: 1900, hp: 120,
     radius: 13.2, speed: 32, weight: 1.4,
     // ⚠ 本图的 Boss：不参与稀有度抽签（它本身就已经是"稀有"了），
     //   再叠一层金色描边会让"金色"这个信号失去意义。
     elite: false, boss: true,
-    desc: '极夜之底的王。通体漆黑，只有王冠和侧线泛着极淡的蓝。九枪才倒。',
+    desc: '极夜之底的王。通体漆黑，只有王冠和侧线泛着极淡的蓝。血厚得不像话。',
     color: 0x1a2a44, belly: 0x2a4a6a, emissive: 0x6f9fff, emissiveIntensity: 0.8,
     glow: [16.0, 0x8fb8ff], crown: true, spots: 0xbfe0ff, fangs: 8,
     body: [9.0, 4.4, 3.2], tail: [3.4, 4.0], fin: [2.4, 1.9], eye: 1.0,
@@ -859,8 +859,12 @@ export const LEVELS = {
   hookRadius:   [8, 10.4, 12.8, 15.2, 17.6, 18, 18.4, 18.8, 19.2, 19.6, 20, 20.4, 20.8, 21.2, 21.6, 22, 22.4, 22.8, 23.2, 23.6, 24],  // 世界单位 — 鱼钩
   descendSpeed: [64, 82, 100, 118, 136, 142, 150, 156, 162, 168, 176, 182, 188, 194, 202, 208, 214, 220, 228, 234, 240],                 // m/s — 铅坠
   ascendSpeed:  [240, 252, 264, 276, 288, 300, 312, 324, 336, 348, 360, 372, 384, 396, 408, 420, 432, 444, 456, 468, 480],   // m/s — 绞盘
-  blastRadius:  [48, 56, 64, 72, 80, 84, 86, 90, 92, 96, 98, 102, 104, 108, 110, 114, 116, 120, 122, 126, 128],                       // 世界单位 — 攻击力
-  damage:       [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],                                // 爆炸伤害 — 攻击力
+  // 攻击力 —— **所有枪械共用的伤害倍率**（v0.4 起，见 UPGRADES.power 的说明）。
+  // 曲线形状 1 + 0.08·lv + 0.003·lv²：前期平缓（新玩家感觉不到"必须点它"），
+  // 后期加速（Lv20 = ×3.80，让"攒满一整套装备"有明确回报）。
+  // ⚠ 它**不**参与任何枪的半径 —— 半径是每把枪的身份（手枪小、散弹大、巴雷特巨大），
+  //   全局放大半径会把这几把枪的差别抹平。
+  gunPower:     [1.00, 1.08, 1.17, 1.27, 1.37, 1.48, 1.59, 1.71, 1.83, 1.96, 2.10, 2.24, 2.39, 2.55, 2.71, 2.88, 3.05, 3.23, 3.41, 3.60, 3.80], // × — 攻击力
   lampRadius:   [52, 92, 136, 184, 240, 258, 276, 294, 312, 330, 348, 366, 384, 402, 420, 438, 456, 474, 492, 510, 528],       // 照亮半径 — 灯具
   lampPower:    [0.10, 0.30, 0.48, 0.66, 0.84, 0.85, 0.85, 0.86, 0.87, 0.88, 0.89, 0.89, 0.90, 0.91, 0.91, 0.92, 0.93, 0.94, 0.94, 0.95, 0.95], // 0~1 — 灯具
   creelLimit:   [8, 11, 13, 16, 18, 21, 24, 26, 29, 31, 34, 37, 39, 42, 44, 47, 50, 52, 55, 57, 60],                         // 条 — 鱼护
@@ -911,9 +915,9 @@ export function upgradeValueText(key, lv) {
     case 'hook': return `${lvAt('hookRadius', lv)}`;
     case 'sinker': return `${lvAt('descendSpeed', lv)}`;
     case 'winch': return `${lvAt('ascendSpeed', lv)}`;
-    // 攻击力有两个数（伤害·半径），中间用窄点而不是 `/`：省 3px，
-    // 而 `19·61 → 20·63m` 配上下面的 desc `伤害/半径` 已经读得清谁是谁。
-    case 'power': return `${lvAt('damage', lv)}·${lvAt('blastRadius', lv)}`;
+    // 攻击力只有一个数（全局伤害倍率）。× 号放在数值里而不是 unit 里：
+    // `×1.00 → ×1.08` 比 `1.00 → 1.08×` 好读，而且 unit 为空时不会有"重复单位"问题。
+    case 'power': return `×${lvAt('gunPower', lv).toFixed(2)}`;
     case 'lamp': return `${lvAt('lampRadius', lv)}`;
     case 'creel': return `${lvAt('creelLimit', lv)}`;
     case 'insurance': return `${lvAt('insurance', lv)}`;
@@ -922,6 +926,171 @@ export function upgradeValueText(key, lv) {
     case 'rig': return `${lvAt('rig', lv)}`;
     default: return '';
   }
+}
+
+// ───────────────────────── 枪械 ─────────────────────────
+//
+// 一把枪 = 一条「机制」+ 六档数值（Lv0 ~ Lv5，也就是**可升级 5 级**）。
+//
+// 为什么把枪做成数据表而不是 if-else：
+//   7 把枪 × 6 档 × 5 个数值 = 210 个数字。散在 game.js 里的话，
+//   ① 改一个数要满仓库找；② 枪店界面没法"照着表渲染"；③ 数值文档只能手抄。
+//
+// ── 数值字段（都是长度 6 的数组，索引 = 枪械等级）──
+//   dmg   单发基础伤害（**未乘攻击力倍率**；最终伤害 = dmg × LEVELS.gunPower[攻击力等级]）
+//   rad   单发判定/爆炸半径（世界单位）。**它是一把枪的身份**，不要拿全局倍率去抹平
+//   cd    两发之间的最小间隔（秒）。单点枪 = 点击冷却下限；连发枪 = 射速
+//   mag   弹匣容量（发）。`null` = 没有弹匣概念（单点枪 / 加特林）
+//   reload 换弹耗时（秒）。`null` 同上
+//
+// ── 机制字段（`mech`）──
+//   'single'  单点：一次点击一发，**不支持长按连发**（普通手枪 / 散弹枪 / 巴雷特）
+//   'burst'   弹匣连发：按住连发到弹匣空 → 自动换弹 → 换完继续（Uzi）
+//   'auto'    持续连发：按住就一直打，没有弹匣，但有 `spinup` 秒的转速预热（加特林）
+//   'laser'   激光：按住持续结算，**伤害随连续照射时间递增**，`mag` 当"过热时长"、
+//             `reload` 当"强制冷却时长"用（激光枪）
+//   'pierce'  穿透：一次点击打出一条**直线弹道**，命中线上所有鱼（鱼叉枪）
+//
+// ── 价格与升级成本 ──
+//   price  购买价（0 = 初始拥有）
+//   upBase 升级基价，第 lv 次升级花 `upBase × GUN_GROWTH^lv`（lv 从 0 起，共 5 次）
+//
+// ⚠ 平衡锚点（改数值前先读这三条）：
+//   ① **普通手枪 Lv0 = 2 伤害 / 24 半径 / 0.30s 间隔**。24 是旧版 48 的**一半**
+//      （用户要求"攻击范围缩小 50%"），而 2 伤害正好让表层鱼（hp 2~5）1~3 枪解决。
+//   ② 每把枪的"身份"必须一眼看得出来：散弹=覆盖、Uzi=爆发但有空窗、
+//      加特林=持续输出但要预热、激光=越照越疼但会过热、巴雷特=一炮清场但很慢、
+//      鱼叉=一条线上全串走。
+//   ③ 后一把枪**不是**前一把的严格上位：巴雷特 DPS 最低但单发最高；
+//      加特林持续 DPS 最高但半径最小、还要预热。让玩家按场景换枪，而不是按价格。
+export const GUNS = [
+  {
+    id: 'pistol', name: '普通手枪', en: 'PISTOL', icon: 'gun-pistol',
+    mech: 'single', tier: '初始', price: 0, upBase: 900,
+    desc: '单点 · 均衡',
+    tip: '点一次打一发，不能长按连发。范围最小，但指哪打哪、没有空窗。',
+    dmg: [2, 3, 5, 7, 10, 14],
+    rad: [24, 27, 31, 35, 40, 46],
+    cd:  [0.30, 0.30, 0.29, 0.28, 0.27, 0.26],
+    mag: null, reload: null,
+  },
+  {
+    id: 'shotgun', name: '散弹枪', en: 'SHOTGUN', icon: 'gun-shotgun',
+    mech: 'single', tier: '轻型', price: 8000, upBase: 2600,
+    desc: '扇形 · 覆盖',
+    tip: '一次打出 6 颗弹丸呈扇形铺开，覆盖极广。单颗伤害低，贴脸才打得满。',
+    dmg: [1.6, 2.2, 3.0, 4.0, 5.4, 7.0],
+    rad: [16, 18, 20, 22, 25, 28],
+    cd:  [0.85, 0.82, 0.79, 0.75, 0.71, 0.66],
+    mag: null, reload: null,
+    pellets: 6, spread: 30,
+  },
+  {
+    id: 'uzi', name: 'Uzi', en: 'UZI', icon: 'gun-uzi',
+    mech: 'burst', tier: '轻型', price: 14000, upBase: 4200,
+    desc: '连发 · 换弹',
+    tip: '按住就是一梭子，打空后自动换弹，换完接着连发。爆发高，但有换弹空窗。',
+    dmg: [1.5, 1.9, 2.4, 3.1, 3.9, 5.0],
+    rad: [14, 15, 16, 18, 20, 22],
+    cd:  [0.100, 0.095, 0.090, 0.085, 0.080, 0.075],
+    mag: [9, 11, 13, 16, 19, 24],
+    reload: [1.40, 1.34, 1.28, 1.20, 1.12, 1.00],
+  },
+  {
+    id: 'gatling', name: '加特林', en: 'GATLING', icon: 'gun-gatling',
+    mech: 'auto', tier: '中型', price: 26000, upBase: 7000,
+    desc: '持续 · 预热',
+    tip: '按住就一直打，没有换弹。开火头 0.9 秒转速没上来，射速只有一半。',
+    dmg: [0.8, 1.0, 1.3, 1.6, 2.0, 2.5],
+    rad: [12, 13, 14, 15, 16, 18],
+    cd:  [0.075, 0.072, 0.069, 0.066, 0.063, 0.060],
+    mag: null, reload: null,
+    spinup: 0.9,
+  },
+  {
+    id: 'harpoon', name: '鱼叉枪', en: 'HARPOON', icon: 'gun-harpoon',
+    mech: 'pierce', tier: '中型', price: 34000, upBase: 9000,
+    desc: '穿透 · 直线',
+    tip: '朝瞄准方向甩出一条贯穿整屏的鱼叉，线上的鱼全部命中。排成一列时最爽。',
+    dmg: [5, 8, 12, 18, 27, 40],
+    rad: [7, 8, 9, 10, 11, 13],
+    cd:  [0.75, 0.72, 0.69, 0.66, 0.63, 0.58],
+    mag: null, reload: null,
+  },
+  {
+    id: 'laser', name: '激光枪', en: 'LASER', icon: 'gun-laser',
+    mech: 'laser', tier: '重型', price: 42000, upBase: 11000,
+    desc: '持续 · 递增',
+    tip: '按住持续照射，照得越久伤害越高（最多 ×5）。连照过热后强制冷却。',
+    dmg: [1.2, 1.6, 2.1, 2.7, 3.5, 4.5],
+    rad: [18, 19, 21, 23, 25, 28],
+    cd:  [0.16, 0.155, 0.150, 0.145, 0.140, 0.130],
+    // 激光把 mag / reload 当"过热时长 / 强制冷却时长"用（见文件头说明）
+    mag: [3.2, 3.5, 3.8, 4.2, 4.6, 5.2],
+    reload: [1.40, 1.35, 1.30, 1.20, 1.10, 0.90],
+    ramp: [0.55, 0.60, 0.66, 0.72, 0.80, 0.90],   // 每秒在基础伤害上加成 ramp·t
+    rampMax: 4.0,                                  // 递增上限（×5 封顶）
+  },
+  {
+    id: 'barrett', name: '巴雷特', en: 'BARRETT', icon: 'gun-barrett',
+    mech: 'single', tier: '重型', price: 60000, upBase: 15000,
+    desc: '单发 · 重炮',
+    tip: '一发入魂：伤害和范围都是全场最高，代价是 1.3 秒才能再开一枪。',
+    dmg: [14, 22, 34, 52, 80, 124],
+    rad: [60, 66, 72, 80, 88, 98],
+    cd:  [1.35, 1.30, 1.25, 1.20, 1.15, 1.05],
+    mag: null, reload: null,
+  },
+];
+
+/** 枪店里的显示顺序（价格从低到高，正好就是"该买哪把"的自然阶梯） */
+export const GUN_ORDER = GUNS.map((g) => g.id);
+
+/** 枪械等级上限：Lv0 是出厂状态，可以升 5 次到 Lv5（用户要求"每把枪可升级 5 级"） */
+export const GUN_MAX_LEVEL = 5;
+
+/**
+ * 枪械升级成本倍率。
+ * 比全局升级的 GROWTH(1.47) 陡得多：一把枪只有 5 次升级，要在这 5 次里
+ * 走完"从能用到毕业"的距离，所以每级得涨得多一点（1.85 ≈ 5 次翻 21 倍）。
+ */
+export const GUN_GROWTH = 1.85;
+
+/** 第 lv 次升级的价格（lv 从 0 起） */
+export const gunUpgradeCost = (id, lv) =>
+  lv >= GUN_MAX_LEVEL ? Infinity : Math.round(gunById(id).upBase * Math.pow(GUN_GROWTH, lv));
+
+/** 按 id 取枪；找不到就退回初始手枪（存档里的脏数据不要炸） */
+export function gunById(id) {
+  return GUNS.find((g) => g.id === id) || GUNS[0];
+}
+
+/**
+ * 某把枪在某个等级下的**实际数值** —— 和 `lvAt` 同一条纪律：
+ * **所有**读枪械数值的地方都必须走这里，不要直接 `gun.dmg[lv]`。
+ *
+ * 理由和 lvAt 一模一样：等级越界 / 存档里没有这把枪的等级 / 测试夹具手写了半截
+ * → `arr[undefined]` 安静返回 undefined → 伤害变 NaN → 鱼永远打不死，
+ * **不报错、不闪退**。这里统一钳到 0..GUN_MAX_LEVEL，枪 id 写错直接退回手枪。
+ */
+export function gunStats(id, lv) {
+  const g = gunById(id);
+  const i = Math.max(0, Math.min(GUN_MAX_LEVEL, Math.round(Number(lv)) || 0));
+  return {
+    id: g.id,
+    mech: g.mech,
+    damage: g.dmg[i],
+    radius: g.rad[i],
+    cooldown: g.cd[i],
+    mag: g.mag ? g.mag[i] : null,
+    reload: g.reload ? g.reload[i] : null,
+    // 机制专属：没有的枪给 0，调用点就不用到处判空
+    pellets: g.pellets || 0,
+    spread: g.spread || 0,
+    ramp: g.ramp ? g.ramp[i] : 0,
+    rampMax: g.rampMax || 0,
+    spinup: g.spinup || 0,
+  };
 }
 
 // ───────────────────────── 深海场景 ─────────────────────────
@@ -1005,9 +1174,9 @@ export const TUNING = {
   castDrag: 1.5,         // 水平阻尼，避免左右横拉变成瞬移
   castSplash: 14,        // 入水水花粒子数
 
-  // 手枪：点击处爆炸
-  blastRadius: (lv) => lvAt('blastRadius', lv),   // 爆炸半径
-  damage: (lv) => lvAt('damage', lv),             // 爆炸伤害
+  // 手枪：点击处爆炸（v0.4 起枪械由 GUNS 表驱动，见下面的 GUNS 段）
+  /** 攻击力：所有枪械共用的伤害倍率 */
+  gunPower: (lv) => lvAt('gunPower', lv),
   fireCooldown: 0.30,
   comboStep: 3,                       // 每 3 连击 +0.25 倍率
   comboMax: 3.0,
@@ -1033,7 +1202,12 @@ export const TUNING = {
   // 中弹未死：血厚的鱼每次没被打死就再往天上顶一段（需求④）。
   // 一次没死 = 一次额外的滞空，所以血越厚飞得越久、越容易被连击。
   knockUpBase: 148,          // 基础再升空初速
-  knockUpPerHp: 18,          // 每剩 1 点血再多顶这么多初速
+  knockUpPerHp: 12,          // 每剩 1 点血再多顶这么多初速
+  // ⚠ v0.4：血量从 1~9 拉宽到 2~120 之后，"按剩余血量线性加初速"会失控 ——
+  //   极夜之王（hp 120）中一枪会被顶飞 148 + 120×12 = 1588，直接飞出大气层。
+  //   所以加一个封顶：**超过 16 点血之后不再多顶**，"血厚 → 飞得久"这个手感
+  //   在浅层照样成立，深层的血牛只是"要多打几枪"，不是"打一枪就上天"。
+  knockUpMaxHp: 16,
   // 空中「没有可打的鱼了」之后还要等多久才结算。
   // 之前这里被飞鸟卡住：鸟只要还在屏幕上就永远不结算，玩家只能干等。
   // ⚠ 这个值现在计的是「**场上没有可打的鱼**之后过了多久」，不是「进空中阶段多久」。

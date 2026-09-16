@@ -53,6 +53,14 @@
 
     <div id="floatLayer" class="float-layer"></div>
 
+    <!-- 枪械条：只在空中射击阶段出现。弹匣 / 换弹进度 / 激光过热都读这里 -->
+    <div id="gunBar" class="gun-bar">
+      <span class="gb-ico" id="gunIco"></span>
+      <span class="gb-txt"><b id="gunName">普通手枪</b><i id="gunMeta">Lv.0</i></span>
+      <span class="gb-ammo" id="gunAmmo"></span>
+      <i class="gb-meter"><b id="gunMeter"></b></i>
+    </div>
+
     <!-- 唯一的常驻入口：手机（商店 / 图鉴 / 设置 都在里面） -->
     <button id="phoneBtn" class="phone-btn"><span class="ico" id="phoneIco"></span>手 机</button>
     <button id="reelBtn" class="reel-btn">收线 <span>▲</span></button>

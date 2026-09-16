@@ -465,6 +465,62 @@ canvas#game {
   50% { transform: translateY(-3px); }
 }
 
+/* ── 枪械条（空中射击阶段）── */
+/* 空中阶段没有收线按钮、没有手机入口，这条就是画面里唯一要读的 HUD。
+   弹匣 / 换弹进度 / 激光递增都挤在这一条里，所以刻意做得窄而扁。
+   ⚠ 只显示不接收点击（pointer-events: none）—— 空中阶段整屏都是开火区，
+     一条挡在中间的 HUD 会把"点它没反应"变成玩家能感觉到的 bug。 */
+.gun-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(74px + var(--safe-b));
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px 13px 10px;
+  border: 1px solid rgba(140, 210, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(5, 24, 42, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.gun-bar.on { display: inline-flex; }
+.gun-bar .gb-ico { display: inline-flex; color: #bfe8ff; }
+.gun-bar .gb-ico svg { display: block; width: 20px; height: 20px; }
+.gun-bar .gb-txt { display: flex; flex-direction: column; line-height: 1.15; }
+.gun-bar .gb-txt b { font-size: 12.5px; font-weight: 800; color: var(--txt); letter-spacing: 0.04em; }
+.gun-bar .gb-txt i { font-size: 9px; font-style: normal; color: var(--txt-dim); letter-spacing: 0.14em; }
+.gun-bar .gb-ammo {
+  min-width: 46px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.gun-bar.reload .gb-ammo { color: #ff9c6a; }
+.gun-bar .gb-meter {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 5px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.gun-bar .gb-meter b {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #8fe6ff, var(--gold));
+}
+.gun-bar.hot .gb-meter b { background: linear-gradient(90deg, #ffcc33, #ff5a3d); }
+
 /* ── 手机入口按钮（待机时出现在屏幕左下角） ── */
 .phone-btn {
   position: absolute;
@@ -712,6 +768,77 @@ canvas#game {
   font-weight: 700;
 }
 
+/* ── 枪店 ──────────────────────────────────────────────
+   和渔具店（一维的 11 行列表）不同，枪店每张卡要装下：名字 + 机制说明 +
+   三个数值的「当前 → 下一级」+ 等级格 + 两个按钮。所以卡片比 .item 高得多，
+   但宽度预算一样是 318px —— 数值行用 flex-wrap 让它在最窄的机型上自己换行，
+   不要用 nowrap（那会横向撑出面板，是渔具店踩过的坑）。 */
+.gs-list { display: flex; flex-direction: column; gap: 11px; margin-bottom: 16px; }
+.gs-item {
+  padding: 11px 12px;
+  border: 1px solid rgba(140, 200, 240, 0.22);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+}
+.gs-item.cur { border-color: rgba(255, 204, 51, 0.5); background: rgba(255, 204, 51, 0.08); }
+.gs-item.locked { opacity: 0.74; }
+
+.gs-h { display: flex; align-items: center; gap: 9px; }
+.gs-ico {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(120, 200, 255, 0.14);
+  color: #bfe8ff;
+}
+.gs-ico svg { display: block; width: 22px; height: 22px; }
+.gs-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gs-t b { font-size: 14px; font-weight: 800; }
+.gs-t i { font-size: 9.5px; font-style: normal; color: var(--txt-dim); letter-spacing: 0.06em; }
+.gs-tag {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(210, 235, 255, 0.8);
+}
+.gs-tag.on { background: rgba(255, 204, 51, 0.2); color: var(--gold); }
+
+.gs-tip { margin-top: 7px; font-size: 10.5px; line-height: 1.5; color: var(--txt-dim); }
+.gs-stats { display: flex; flex-wrap: wrap; gap: 5px 11px; margin-top: 7px; }
+.gs-st { font-size: 10.5px; color: rgba(190, 220, 245, 0.72); font-variant-numeric: tabular-nums; }
+.gs-st b { color: var(--cyan); font-weight: 800; }
+.gs-st i { font-style: normal; color: rgba(150, 185, 215, 0.6); margin: 0 3px; }
+
+.gs-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+.gs-lv { display: flex; align-items: center; gap: 7px; }
+.gs-lv .pips { margin-top: 0; }
+.gs-lv em { font-size: 9.5px; font-style: normal; color: var(--txt-dim); letter-spacing: 0.1em; }
+.gs-btns { display: flex; gap: 6px; }
+.gs-btns .buy { padding: 7px 10px; font-size: 11.5px; }
+.gs-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 13px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #8fe6ff, #2f9fd0);
+  color: #04283c;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #1a6c92;
+}
+.gs-go:active { transform: translateY(2px); box-shadow: 0 1px 0 #1a6c92; }
+
 /* ── 主按钮 ── */
 .btn {
   display: block;
@@ -905,6 +1032,7 @@ canvas#game {
 .cx-haz svg { display: block; }
 .cx-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; font-size: 10.5px; flex-wrap: wrap; }
 .cx-hp { display: inline-flex; align-items: center; gap: 1px; color: #ff7a8a; }
+.cx-hp b { font-size: 11px; font-weight: 800; color: inherit; font-variant-numeric: tabular-nums; }
 .cx-hp svg { display: block; }
 .cx-val { color: var(--gold); font-weight: 800; font-variant-numeric: tabular-nums; }
 .cx-cnt { color: rgba(160, 200, 230, 0.6); font-variant-numeric: tabular-nums; }
@@ -1171,6 +1299,8 @@ canvas#game {
 .p-ico.codex { background: linear-gradient(158deg, #8fe6ff, #1c7cb4); }
 /* 航线：冰蓝 → 深蓝，和「冰封极地」的配色是一家的 */
 .p-ico.route { background: linear-gradient(158deg, #a8f0e0, #1f7fa8); }
+/* 枪店：暖红 —— 和已有的金/蓝/青/灰四色都拉开，一眼能找到 */
+.p-ico.gunshop { background: linear-gradient(158deg, #ffb37a, #b03a2e); }
 .p-ico.settings { background: linear-gradient(158deg, #c3d0dd, #56687a); }
 /* 未开放的地图（多地图结构预留）：App 变灰 */
 .p-app-item[disabled] { opacity: 0.42; cursor: default; }

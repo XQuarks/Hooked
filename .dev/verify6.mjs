@@ -398,10 +398,11 @@ try {
       time: document.getElementById('pTime').textContent,
       statusSvg: document.querySelectorAll('.p-sys svg').length };
   })())`));
-  check('E5 桌面有应用列表：渔具店 / 鱼图鉴 / 航线 / 设置 四个 App',
-    home.n === 4 && home.ids.join(',') === 'shop,codex,route,settings'
-      && home.names[0].includes('渔具店') && home.names[1].includes('鱼图鉴')
-      && home.names[2].includes('航线') && home.names[3].includes('设置'),
+  check('E5 桌面有应用列表：渔具店 / 枪店 / 鱼图鉴 / 航线 / 设置 五个 App',
+    home.n === 5 && home.ids.join(',') === 'shop,gunshop,codex,route,settings'
+      && home.names[0].includes('渔具店') && home.names[1].includes('枪店')
+      && home.names[2].includes('鱼图鉴') && home.names[3].includes('航线')
+      && home.names[4].includes('设置'),
     JSON.stringify(home.names));
   check('E6 手机有状态栏（时钟 + 信号/Wi-Fi/电量）与底部常驻抛竿 Dock',
     home.statusSvg === 3 && /^\d{1,2}:\d{2}$/.test(home.time) && home.hasDock && home.hasWidget,

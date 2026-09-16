@@ -10,7 +10,7 @@
  */
 import { UPGRADES, UPGRADE_ORDER, MAX_LEVEL, upgradeCost, upgradeValueText,
   levelCapForMap, MAPS, DEFAULT_MAP, mapById, mapMaxDepth, mapOfSpecies,
-  zonesOfMap } from './config.js';
+  zonesOfMap, GUNS, GUN_MAX_LEVEL, gunById } from './config.js';
 import { codexOrder, zoneLabel, groupByMap, drawFishIcon } from './codex.js';
 import { coinIcon, glyph, iconText, heartRow, GLYPH } from './icons.js';
 
@@ -95,6 +95,13 @@ export class UI {
       phoneIco: $('phoneIco'),
       hint: $('hint'),
       overlay: $('overlay'),
+      // 枪械条（空中阶段）
+      gunBar: $('gunBar'),
+      gunIco: $('gunIco'),
+      gunName: $('gunName'),
+      gunMeta: $('gunMeta'),
+      gunAmmo: $('gunAmmo'),
+      gunMeter: $('gunMeter'),
       // 手机
       phoneLayer: $('phoneLayer'),
       phoneBody: $('phoneBody'),
@@ -415,6 +422,47 @@ export class UI {
   /** 手机入口：只在待机（船上）时出现 —— 商店 / 图鉴 / 设置 全在里面 */
   showPhoneBtn(v) { this.el.phoneBtn.classList.toggle('on', v); }
 
+  /** 枪械条：只在空中射击阶段出现 */
+  showGunBar(v) { this.el.gunBar.classList.toggle('on', v); }
+
+  /**
+   * 刷新枪械条。**每帧都会被调用**，所以这里只改文本和宽度，绝不重建 DOM 子树
+   * （枪械图标是 SVG，每帧 innerHTML 一次会直接掉帧）。
+   *
+   * 三种枪三种读法：
+   *   - 有弹匣（Uzi）→ `7 / 9`
+   *   - 激光        → 显示递增倍率 `×2.4`，进度条走"过热进度"
+   *   - 其余        → 显示全局伤害倍率 `×1.48`，进度条走"换弹进度"
+   */
+  setGunState(g) {
+    if (!g || !this.el.gunBar) return;
+    if (this._gunIcon !== g.icon) {
+      this._gunIcon = g.icon;
+      this.el.gunIco.innerHTML = glyph(g.icon, 20);
+    }
+    this.el.gunName.textContent = g.name;
+    this.el.gunMeta.textContent = `Lv.${g.level}`;
+
+    const reloading = g.reloadT > 0;
+    // 兜底：倍率缺失时按 ×1 显示。枪械条是每帧刷的 HUD，
+    // 这里抛一次异常就会把整个 _updateAir 打断（症状是"鱼打不死、也不结算"）。
+    const mul = Number.isFinite(g.mul) ? g.mul : 1;
+    let ammo = `×${mul.toFixed(2)}`;
+    if (reloading) ammo = '换弹…';
+    else if (g.mech === 'laser') {
+      // 激光读的是"当前递增到几倍"，玩家才知道"再照一会儿更疼"
+      ammo = `×${(1 + Math.min(g.rampMax || 0, (g.ramp || 0) * g.heat)).toFixed(1)}`;
+    } else if (g.mag) ammo = `${g.ammo} / ${g.mag}`;
+    this.el.gunAmmo.textContent = ammo;
+
+    let pct = 0;
+    if (reloading && g.reloadMax > 0) pct = 1 - g.reloadT / g.reloadMax;
+    else if (g.mech === 'laser' && g.heatMax > 0) pct = Math.min(1, g.heat / g.heatMax);
+    this.el.gunMeter.style.width = `${Math.round(pct * 100)}%`;
+    this.el.gunBar.classList.toggle('reload', reloading);
+    this.el.gunBar.classList.toggle('hot', pct > 0.72 && !reloading);
+  }
+
   setHint(text) {
     if (!text) { this.el.hint.classList.remove('on'); return; }
     this.el.hint.textContent = text;
@@ -489,7 +537,8 @@ export class UI {
     // 桌面小部件显示的是**本图**的最深纪录（不是全局 bestDepth）——
     // 换到冰封极地之后，"最深纪录"要跟着这张图走，否则会显示海湾那 430m。
     const best = Math.max(0, Math.round(save.mapBest?.[map.id] || 0));
-    const apps = [['shop', '渔具店'], ['codex', '鱼图鉴'], ['route', '航线'], ['settings', '设置']]
+    const apps = [['shop', '渔具店'], ['gunshop', '枪店'], ['codex', '鱼图鉴'],
+      ['route', '航线'], ['settings', '设置']]
       .map(([id, nm]) => `
         <button class="p-app-item" data-app="${id}">
           <span class="p-ico ${id}">${glyph(id, 28)}</span><span>${nm}</span>
@@ -559,6 +608,7 @@ export class UI {
 
     let html = '';
     if (id === 'shop') html = this._appShell('渔 具 店', `金币 ${fmt(save.coins)}`, this._shopBody(save, this.mapIndex));
+    else if (id === 'gunshop') html = this._appShell('枪 店', `金币 ${fmt(save.coins)}`, this._gunshopBody(save, handlers));
     else if (id === 'codex') html = this._appShell('鱼 类 图 鉴', '按地图 · 深度排序', this._codexBody(save, order));
     else if (id === 'route') html = this._appShell('航 线', `金币 ${fmt(save.coins)}`, this._routeBody(save, handlers));
     else if (id === 'settings') html = this._appShell('设 置', 'v1.0', this._settingsBody(save, handlers));
@@ -571,6 +621,17 @@ export class UI {
     if (id === 'shop') {
       this.el.pApp.querySelectorAll('.buy[data-k]').forEach((b) => {
         b.onclick = () => handlers.buy(b.dataset.k);
+      });
+    } else if (id === 'gunshop') {
+      // 三个动作各管各的按钮：买（没拥有）→ 装备（拥有但不是当前）→ 升级（拥有）
+      this.el.pApp.querySelectorAll('[data-gun-buy]').forEach((b) => {
+        b.onclick = () => handlers.buyGun(b.dataset.gunBuy);
+      });
+      this.el.pApp.querySelectorAll('[data-gun-equip]').forEach((b) => {
+        b.onclick = () => handlers.equipGun(b.dataset.gunEquip);
+      });
+      this.el.pApp.querySelectorAll('[data-gun-up]').forEach((b) => {
+        b.onclick = () => handlers.upgradeGun(b.dataset.gunUp);
       });
     } else if (id === 'route') {
       this.el.pApp.querySelectorAll('.rt-go[data-map]').forEach((b) => {
@@ -652,6 +713,92 @@ export class UI {
         本图开放至 <b>Lv.${cap}</b> / ${MAX_LEVEL} —— 买满后换一片海继续往上堆。
       </div>
       <div class="shop-list">${rows}</div>`;
+  }
+
+  // ── App 内容：枪店（v0.4）─────────────────────────────────
+  /**
+   * 枪店 = 购买 / 装备 / 升级 三件事，全在一张卡上完成。
+   *
+   * 数据全部来自 `game.gunEntry()` —— **UI 不做任何判断**，只把
+   * 「拥有 / 装备中 / 买得起 / 下一级数值」翻译成按钮的几种状态。
+   * 判断留在 UI 里的话，"按钮亮着却点不动"这类不一致会同时出现在好几个地方，
+   * 而且没有任何断言测得到。
+   *
+   * 每张卡都必须把「这把枪的机制」写出来（tip）：枪械和升级项不一样 ——
+   * 玩家没法从"Uzi"两个字猜出它和加特林差在哪，那是设计文档里的知识，不是常识。
+   */
+  _gunshopBody(save, handlers) {
+    const list = (handlers.gunList && handlers.gunList()) || [];
+    if (!list.length) return '';
+    let lastTier = '';
+
+    const num = (v) => `${Math.round(v * 10) / 10}`;
+    const sec = (v) => `${v.toFixed(2)}s`;
+    // 「当前 → 下一级」；满级（next 为 null）时只显示当前值
+    const delta = (cur, nx, f) => (nx == null ? `<b>${f(cur)}</b>` : `${f(cur)}<i>→</i><b>${f(nx)}</b>`);
+
+    const rows = list.map((e) => {
+      const g = e.gun;
+      const n = e.next;
+      // 分层小标题（和渔具店同一个视觉语言）：7 把枪按 初始 → 轻型 → 中型 → 重型 排下来，
+      // 玩家一眼就知道"现在该买哪一档"。tier 字段只在枪店里用得到。
+      const tierHead = g.tier !== lastTier ? `<div class="tier-h">${g.tier}</div>` : '';
+      lastTier = g.tier;
+      const stats = [
+        `<span class="gs-st">伤害 ${delta(e.stat.damage, n && n.damage, num)}</span>`,
+        `<span class="gs-st">范围 ${delta(e.stat.radius, n && n.radius, num)}</span>`,
+        `<span class="gs-st">间隔 ${delta(e.stat.cooldown, n && n.cooldown, sec)}</span>`,
+      ];
+      // 弹匣 / 过热：只有 Uzi 和激光有，单位语义不同（发数 vs 秒数）
+      if (e.stat.mag) {
+        const unit = g.mech === 'laser' ? 's' : ' 发';
+        const label = g.mech === 'laser' ? '过热' : '弹匣';
+        stats.push(`<span class="gs-st">${label} ${delta(e.stat.mag, n && n.mag, (v) => `${num(v)}${unit}`)}</span>`);
+      }
+
+      const pips = Array.from({ length: GUN_MAX_LEVEL },
+        (_, i) => `<i class="${i < e.lv ? 'f' : ''}"></i>`).join('');
+
+      // 主按钮：装备中 / 装备 / 购买 / 买不起
+      let btn;
+      if (e.current) btn = '<button class="buy max" disabled>装备中</button>';
+      else if (e.owned) btn = `<button class="gs-go" data-gun-equip="${g.id}">装 备</button>`;
+      else if (e.canAffordBuy) btn = `<button class="gs-go" data-gun-buy="${g.id}">${coinIcon(12)} ${fmtCost(g.price)}</button>`;
+      else btn = `<button class="buy lock" disabled>${coinIcon(12)} ${fmtCost(g.price)}</button>`;
+
+      // 升级按钮：只有拥有的枪才有（没买的枪只显示价格，避免一排没用的灰按钮）
+      let upBtn = '';
+      if (e.owned) {
+        upBtn = e.maxed
+          ? '<button class="buy max" disabled>MAX</button>'
+          : `<button class="buy" data-gun-up="${g.id}" ${save.coins >= e.upCost ? '' : 'disabled'}>升级 ${coinIcon(12)} ${fmtCost(e.upCost)}</button>`;
+      }
+
+      const tag = e.current ? '<span class="gs-tag on">装备中</span>'
+        : (e.owned ? '<span class="gs-tag">已拥有</span>' : '');
+
+      return `${tierHead}
+        <div class="gs-item${e.current ? ' cur' : ''}${e.owned ? ' owned' : ' locked'}">
+          <div class="gs-h">
+            <span class="gs-ico">${glyph(g.icon, 22)}</span>
+            <div class="gs-t"><b>${g.name}</b><i>${g.en} · ${g.desc}</i></div>
+            ${tag}
+          </div>
+          <div class="gs-tip">${g.tip}</div>
+          <div class="gs-stats">${stats.join('')}</div>
+          <div class="gs-foot">
+            <div class="gs-lv"><span class="pips">${pips}</span><em>Lv.${e.lv} / ${GUN_MAX_LEVEL}</em></div>
+            <div class="gs-btns">${upBtn}${btn}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="wallet"><span class="lb">金币</span><span class="amt">${fmt(save.coins)}</span></div>
+      <div class="p-note" style="margin:0 0 10px">
+        每把枪可升 <b>${GUN_MAX_LEVEL}</b> 级 · 「攻击力」是所有枪共用的伤害倍率，在渔具店里升。
+      </div>
+      <div class="gs-list">${rows}</div>`;
   }
 
   // ── App 内容：航线（换地图）───────────────────────────────
@@ -756,7 +903,9 @@ export class UI {
             ? `${def.name}${def.hazard ? `<span class="cx-haz">${iconText('warn', '扣钱', 10)}</span>` : ''}`
             : '？ ？ ？';
           const meta = known
-            ? `<span class="cx-hp" title="血量 ${def.hp}">${heartRow(def.hp, 12)}</span>`
+            // 血量改成「一颗心 + 数字」：v0.4 之后血量最高 120，画 120 颗心会直接撑爆一行。
+            // 数字也更好用 —— 玩家能一眼算出"我这几枪够不够"。
+            ? `<span class="cx-hp" title="血量 ${def.hp}">${glyph('heart', 11)}<b>${def.hp}</b></span>`
               + `<span class="cx-val">${coinIcon(12)} ${def.value}</span>`
               + `<span class="cx-cnt">钓到 ${rec.n} 次 · 最高 ${rec.best}</span>`
             : '<span class="cx-lock">未 钓 获</span>';

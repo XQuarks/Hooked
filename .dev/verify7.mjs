@@ -41,8 +41,8 @@ console.log('\n── A 数值表 ──');
 const { LEVELS, MAX_LEVEL, UPGRADES, UPGRADE_ORDER, GROWTH, upgradeCost, lvAt, MAP_LEVEL_CAP } = C;
 const ROWS = Object.keys(LEVELS);
 
-check('A1 曲线条数 = 13，每条都是 21 级（0~20）无缺口',
-  ROWS.length === 13 && ROWS.every((k) => LEVELS[k].length === MAX_LEVEL + 1),
+check('A1 曲线条数 = 12，每条都是 21 级（0~20）无缺口',
+  ROWS.length === 12 && ROWS.every((k) => LEVELS[k].length === MAX_LEVEL + 1),
   `${ROWS.length} 条 · ${ROWS.join('/')}`);
 
 check('A2 每条曲线的值都是有限数（没有 NaN / undefined 洞）',
@@ -57,13 +57,17 @@ check('A2 每条曲线的值都是有限数（没有 NaN / undefined 洞）',
 //   老存档**不需要换 SAVE_KEY**：存档里存的是"等级"（Lv0~Lv4），不是数值本身，
 //   等级含义变了只是让老档的装备变强，不会读出 undefined 把物理打成 NaN。
 //   verify3 的 T8~T11 也同步断言 Lv4 的 840 / 17.6 / 136 / 240。
+//
+// ⚠ v0.4 枪械系统**移除了 blastRadius / damage 两条曲线**：它们原来是
+//   「攻击力」升级直接给的"伤害 + 半径绝对值"，现在所有枪都有自己的伤害与半径
+//   （见 config.js 的 GUNS），攻击力改成一条乘数曲线 gunPower。
+//   所以这里从 8 条变成 7 条 —— 这是**设计变更**，不是回归。
+//   （gunPower 是新曲线，不受"索引 0~4 冻结"约束，它的 Lv0 必须 = 1.00 倍。）
 const FROZEN = {
   maxDepth: [320, 450, 580, 710, 840],
   hookRadius: [8, 10.4, 12.8, 15.2, 17.6],
   descendSpeed: [64, 82, 100, 118, 136],
   ascendSpeed: [240, 252, 264, 276, 288],
-  blastRadius: [48, 56, 64, 72, 80],
-  damage: [1, 2, 3, 4, 5],
   lampRadius: [52, 92, 136, 184, 240],
   lampPower: [0.10, 0.30, 0.48, 0.66, 0.84],
 };
@@ -71,7 +75,14 @@ const frozenBad = Object.entries(FROZEN)
   .filter(([k, v]) => !v.every((x, i) => LEVELS[k][i] === x))
   .map(([k]) => k);
 check('A3 索引 0~4 冻结 = v0.2 现值（保住前四套回归 + 老存档不用换 key）',
-  frozenBad.length === 0, frozenBad.length ? '被改动：' + frozenBad.join(',') : '8 条曲线逐位一致');
+  frozenBad.length === 0, frozenBad.length ? '被改动：' + frozenBad.join(',') : '7 条曲线逐位一致');
+
+// 攻击力是**乘数**曲线：Lv0 必须恰好是 1.00（不然"没升过攻击力"的新玩家
+// 一开始就吃到非零加成，所有枪的标定值全部对不上）
+check('A3b 攻击力（gunPower）是乘数曲线：Lv0 = 1.00、单调递增、Lv20 = 3.80',
+  LEVELS.gunPower[0] === 1 && LEVELS.gunPower[20] === 3.8
+  && LEVELS.gunPower.every((v, i) => i === 0 || v > LEVELS.gunPower[i - 1]),
+  `${LEVELS.gunPower[0]} → ${LEVELS.gunPower[20]}`);
 
 // 等级越高越强，不能出现"升了一级反而变差"
 const nonMono = ROWS.filter((k) => LEVELS[k].some((v, i) => i > 0 && v < LEVELS[k][i - 1]));
@@ -91,7 +102,7 @@ check('A5 升级成本随等级严格递增、Lv0 = base、满级为 Infinity',
 
 check('A6 lvAt 对残缺/越界等级给出有限值（NaN 会静默毁掉物理）',
   lvAt('ascendSpeed', undefined) === 240 && lvAt('creelLimit', -5) === 8
-  && lvAt('maxDepth', 999) === 2200 && lvAt('damage', 1e9) === 21,
+  && lvAt('maxDepth', 999) === 2200 && lvAt('gunPower', 1e9) === 3.8,
   `undefined→${lvAt('ascendSpeed', undefined)} / −5→${lvAt('creelLimit', -5)} / 999→${lvAt('maxDepth', 999)}`);
 
 const tierSet = new Set(UPGRADE_ORDER.map((k) => UPGRADES[k].tier));

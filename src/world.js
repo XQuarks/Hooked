@@ -267,6 +267,85 @@ class BlastPool {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 光束池（激光 / 鱼叉的视觉主体）
+//
+// 和爆炸池的区别：爆炸是"一个点向外扩"，光束是"两个点之间的一条线"。
+// 激光每帧都调一次 spawn（life 很短、彼此重叠）→ 看起来是**一条持续的光柱**；
+// 鱼叉只在开火那一下 spawn 一次（life 长一点）→ 看起来是"一道划过屏幕的叉"。
+// 共用同一个池是有意的：两者在渲染上是同一个东西，只是生命周期不同。
+// ─────────────────────────────────────────────────────────────
+class BeamPool {
+  constructor(scene, glowTex, max = 16) {
+    this.items = [];
+    for (let i = 0; i < max; i++) {
+      const g = new THREE.Group();
+
+      // 外层光晕：把一张径向渐变贴图沿长度方向拉长，边缘会自然衰减
+      const core = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({
+          map: glowTex, color: 0xffffff, transparent: true, opacity: 0,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        })
+      );
+      // 内层亮芯：一条实心细线，保证在浅色背景上也看得出"这条线在哪"
+      const line = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff, transparent: true, opacity: 0,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        })
+      );
+      g.add(core, line);
+      g.visible = false;
+      g.renderOrder = 9;
+      scene.add(g);
+      this.items.push({ g, core, line, life: 0, maxLife: 0.1, len: 1, w: 4, color: 0xffffff });
+    }
+    this.cursor = 0;
+  }
+
+  /**
+   * @param {number} w 光束半宽（世界单位）。判定半径和它一致 —— "看到多粗就打多粗"
+   * @param {number} life 存活秒数。激光传 0.08（每帧刷新，视觉上连续）
+   */
+  spawn(x0, y0, x1, y1, w, color, life = 0.12) {
+    const it = this.items[this.cursor];
+    this.cursor = (this.cursor + 1) % this.items.length;
+    const dx = x1 - x0, dy = y1 - y0;
+    it.g.position.set((x0 + x1) / 2, (y0 + y1) / 2, 7);
+    it.g.rotation.z = Math.atan2(dy, dx);
+    it.len = Math.max(1, Math.hypot(dx, dy));
+    it.w = Math.max(1, w);
+    it.color = color;
+    it.maxLife = life;
+    it.life = life;
+    it.g.visible = true;
+    return it;
+  }
+
+  update(dt) {
+    for (const it of this.items) {
+      if (it.life <= 0) continue;
+      it.life -= dt;
+      if (it.life <= 0) { it.g.visible = false; continue; }
+      const t = Math.max(0, it.life / it.maxLife);   // 1 → 0
+      // ⚠ 宽度和亮度都刻意压着：AdditiveBlending 下"叠得越厚越白"，
+      //   core 放大到 3.6 倍宽 + 0.55 不透明度时整条光柱会糊成一根白棒，
+      //   颜色信息（激光的粉 / 鱼叉的冰蓝）全丢。2.4 倍宽 + 0.3 才留得住色相。
+      it.line.scale.set(it.len, it.w, 1);
+      it.line.material.color.setHex(it.color);
+      it.line.material.opacity = 0.78 * t;
+      it.core.scale.set(it.len * 1.02, it.w * 2.4, 1);
+      it.core.material.color.setHex(it.color);
+      it.core.material.opacity = 0.3 * t;
+    }
+  }
+
+  clear() { for (const it of this.items) { it.life = 0; it.g.visible = false; } }
+}
+
+// ─────────────────────────────────────────────────────────────
 // World
 // ─────────────────────────────────────────────────────────────
 export class World {
@@ -768,9 +847,10 @@ export class World {
   /** 浮冰的碰撞体（game.js 只读这个，不碰 mesh 细节） */
   get icebergColliders() { return this.icebergRoot && this.icebergRoot.visible ? this.icebergs : null; }
 
-  // ── 爆炸池 ───────────────────────────────────────────────
+  // ── 爆炸池 / 光束池 ──────────────────────────────────────
   _buildBlasts() {
     this.blasts = new BlastPool(this.scene, this.glowTex, 8);
+    this.beams = new BeamPool(this.scene, this.glowTex, 16);
   }
 
   // ─────────────────────────────────────────────────────────
@@ -1525,9 +1605,18 @@ export class World {
     this.burstBubbles(x, y, 6, radius * 0.7);
   }
 
+  /**
+   * 光束：从 (x0,y0) 到 (x1,y1) 的一条线。
+   * 激光每帧调它（life 短 → 视觉连续），鱼叉开火时调一次（life 长 → 一道划过）。
+   */
+  burstBeam(x0, y0, x1, y1, width, color, life = 0.12) {
+    return this.beams.spawn(x0, y0, x1, y1, width, color, life);
+  }
+
   clearParticles() {
     this.coins.clear(); this.bubbles.clear(); this.sparks.clear(); this.chunks.clear();
     if (this.blasts) this.blasts.clear();
+    if (this.beams) this.beams.clear();
   }
 
   // ── 每帧更新 ─────────────────────────────────────────────
@@ -1702,6 +1791,7 @@ export class World {
     this.sparks.update(dt);
     this.chunks.update(dt);
     this.blasts.update(dt);
+    if (this.beams) this.beams.update(dt);
   }
 
   render() {
