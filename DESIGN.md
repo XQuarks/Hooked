@@ -337,15 +337,21 @@ v0     = 120 + √价值 × 7          起飞初速
 
 ### 2.9 文件结构
 
+> 📂 **完整分层说明（逐文件作用 / 依赖方向 / 改动落点速查 / 维护约定）见 [STRUCTURE.md](./STRUCTURE.md)。** 这里只列主干。
+
 ```
 /
 ├── index.html          # 入口：竖屏容器 + importmap + HUD 骨架（手机按钮 / 深度读数 / 手机外壳）
 ├── styles.css          # 竖屏布局、HUD、深度尺、手机外壳与 App、图鉴、结算面板
 ├── DESIGN.md           # 本文档
 ├── README.md           # 玩法说明 + 部署说明
+├── EXPANSION.md        # 扩建方案
+├── STRUCTURE.md        # 文件分层与作用说明
+├── .nojekyll           # GitHub Pages 免 Jekyll
+├── .gitignore          # 忽略开发产物 / Chrome profile / AI 记忆目录
 ├── vendor/three.module.js
 ├── src/
-│   ├── config.js       # 数值配置：MAPS 多地图 / 20 种鱼 / 深度区 / 大气分层 / 11 项升级 × 20 级 /
+│   ├── config.js       # 数值配置：MAPS 多地图 / 38 种鱼 / 深度区 / 大气分层 / 11 项升级 × 20 级 /
 │   │                   #   lvAt() 等级取值入口 / 扣钱鱼频率（HAZARD_SPAWN）/ 深海参数 / 手感参数（唯一数值来源）
 │   ├── icons.js        # 内联 SVG 图标库（金币 / 商店 / 图鉴 / 设置 / 手机 / 状态栏 / 血量…）
 │   ├── audio.js        # WebAudio 程序化音效
@@ -356,7 +362,9 @@ v0     = 120 + √价值 × 7          起飞初速
 │   ├── ui.js           # HUD、深度尺、手机外壳与 4 个 App、图鉴、结算面板、标题页
 │   ├── input.js        # 统一输入（触屏 / 鼠标 / 键盘）
 │   └── game.js         # 主循环 + 状态机 + 扣钱鱼加权抽签 + 存档
-└── .dev/               # CDP 验证与出图脚本（见 README 的「开发辅助」）
+├── .dev/               # CDP 验证与出图脚本（见 README 的「开发辅助」）
+├── shots-v2/           # 旧版人工复核截图（.gitignore 内）
+└── .workbuddy-ai/memory/  # AI 工作记忆与开发日志（.gitignore 内）
 ```
 
 > `gun.js` 已在迭代 3 删除 —— 武器不再有实体外观，命中判定完全由点击坐标处的爆炸承担。
