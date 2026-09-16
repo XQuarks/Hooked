@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#04121f" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="description" content="HOOKED · 一款模仿 Ridiculous Fishing 核心玩法的 Three.js 竖屏钓鱼游戏" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%8E%A3%3C/text%3E%3C/svg%3E" />
+<title>HOOKED · 荒谬钓鱼</title>
+<link rel="stylesheet" href="./styles.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hud">
+    <div class="topbar">
+      <!-- 金币图标是内联 SVG（icons.js 注入），不是 emoji —— 见 icons.js 顶部说明 -->
+      <div class="chip coin"><span class="ico" id="coinIco"></span><b id="coinVal">0</b></div>
+      <div id="depthChip" class="chip depth"><span class="ico" id="depthIco"></span><b id="depthVal">0</b><i>/ <span id="lineVal">80</span>m</i></div>
+      <!-- 静音按钮的内容由 ui.setMuteIcon() 在启动时注入 SVG，这里留空避免 emoji 闪一下 -->
+      <button id="muteBtn" class="iconbtn" aria-label="声音"></button>
+    </div>
+
+    <div id="seaTitle" class="sea-title">
+      <b id="seaName">宁静海湾</b>
+      <span id="seaGoal">可下潜至 −430m</span>
+    </div>
+
+    <div id="zoneBanner" class="zone-banner">
+      <b id="zoneName">表层</b><span id="zoneEn">SUNLIT</span>
+    </div>
+
+    <div id="ruler" class="ruler"></div>
+
+    <div id="catchPanel" class="catch-panel">
+      <div class="catch-head"><span>渔获</span><b id="catchCount">0</b></div>
+      <div id="catchList" class="catch-list"></div>
+    </div>
+
+    <div id="comboBox" class="combo-box">
+      <b id="comboVal">×1.0</b><span id="comboCnt">0 COMBO</span>
+    </div>
+
+    <div id="floatLayer" class="float-layer"></div>
+
+    <!-- 唯一的常驻入口：手机（商店 / 图鉴 / 设置 都在里面） -->
+    <button id="phoneBtn" class="phone-btn"><span class="ico" id="phoneIco"></span>手 机</button>
+    <button id="reelBtn" class="reel-btn">收线 <span>▲</span></button>
+    <div id="hint" class="hint"></div>
+  </div>
+
+  <!-- 手机界面：打开后是一台占满屏幕的巨大智能手机，商店 / 图鉴 / 设置都是里面的 App -->
+  <div id="phoneLayer" class="phone-layer hidden">
+    <div class="phone" id="phoneBody">
+      <div class="phone-shell">
+        <div class="p-island"></div>
+        <div class="p-status">
+          <span class="p-time" id="pTime">9:41</span>
+          <span class="p-sys">
+            <i class="p-slot" id="pSig"></i>
+            <i class="p-slot" id="pWifi"></i>
+            <i class="p-slot" id="pBat"></i>
+          </span>
+        </div>
+        <div class="p-body">
+          <div class="p-home" id="pHome"></div>
+          <div class="p-app hidden" id="pApp"></div>
+        </div>
+        <div class="p-dock" id="pDock"></div>
+        <div class="p-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay" class="overlay hidden"></div>
+</div>
+
+<script type="module" src="./src/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,1443 @@
+/* ============================================================
+   HOOKED · 荒谬钓鱼  —  竖屏优先样式
+   ============================================================ */
+:root {
+  --gold: #ffcc33;
+  --gold-d: #d99a12;
+  --ink: #04121f;
+  --ink-2: #0a2338;
+  --cyan: #6fd8ff;
+  --red: #ff5a48;
+  --panel: rgba(5, 24, 42, 0.88);
+  --panel-line: rgba(140, 210, 255, 0.22);
+  --txt: #eaf6ff;
+  --txt-dim: #9fc0d6;
+  --r: 14px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #02090f;
+  color: var(--txt);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── 舞台：手机竖屏全屏，宽屏时收敛成 9:16 竖屏栏 ── */
+#stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #04121f;
+  isolation: isolate;
+}
+
+@media (min-aspect-ratio: 10/16) {
+  body { background: radial-gradient(circle at 50% 30%, #0d2c45 0%, #02090f 70%); }
+  #stage {
+    width: calc(100vh * 9 / 16);
+    width: calc(100dvh * 9 / 16);
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 22px;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(120, 200, 255, 0.16);
+  }
+}
+
+canvas#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* ── HUD ── */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: calc(10px + var(--safe-t)) 10px calc(10px + var(--safe-b));
+  font-size: 14px;
+}
+.hud.hidden { display: none; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.chip .ico { font-size: 13px; display: inline-flex; align-items: center; }
+/* 图标统一是内联 SVG（icons.js）：矢量、随字号缩放、不依赖系统 emoji 字体 */
+.chip .ico svg { display: block; }
+.chip b { font-size: 15px; letter-spacing: 0.02em; }
+
+/* ── 内联 SVG 图标通用 ── */
+.svg-ico { display: inline-block; vertical-align: -0.16em; flex: 0 0 auto; }
+.chip i { font-style: normal; font-size: 11px; color: var(--txt-dim); margin-left: 1px; }
+.chip.coin b { color: var(--gold); }
+.chip.depth b { color: var(--cyan); }
+/* 「/ 240m」是当前鱼线的极限，用暖色和红色虚线呼应 */
+.chip.depth i span { color: #ff9a8a; font-weight: 800; }
+.chip.depth { margin-left: auto; }
+/* 需求⑨：待机时先隐藏，抛竿开始游戏后再淡入 */
+.chip.depth {
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+  transition: opacity 0.34s ease-out, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.chip.depth.on { opacity: 1; transform: translateY(0); }
+
+.iconbtn {
+  pointer-events: auto;
+  width: 38px; height: 38px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  color: var(--txt);
+  font-size: 16px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.iconbtn:active { transform: scale(0.92); }
+.iconbtn svg { display: block; }
+
+/* ── 主界面大标题：海域名 + 玩家到过的最深处 ── */
+.sea-title {
+  position: absolute;
+  left: 50%;
+  top: 76px;                                   /* 比原来下移一点（需求⑥） */
+  transform: translateX(-50%) translateY(-14px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;                                   /* 90px 的字号会溢出 line-box，间距要留够 */
+  /* 绝对定位 + left:50% 时，shrink-to-fit 的可用宽度只剩一半，
+     4 个字的标题会被挤成两行 —— 必须显式 max-content。 */
+  width: max-content;
+  max-width: 96vw;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s, transform 0.45s;
+  text-align: center;
+}
+.sea-title.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+.sea-title b {
+  /* 需求⑥：放大到约 3 倍，但不能撑破竖屏 —— 用 vw 夹住上限 */
+  font-size: min(93px, 21vw);
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  line-height: 1.06;
+  white-space: nowrap;
+  color: #fff;
+  /* --sea 由 ui.js 按当前海域配色提亮后写入 */
+  text-shadow: 0 3px 0 rgba(4, 24, 40, 0.85), 0 0 34px var(--sea, #6fd8ff), 0 7px 16px rgba(0, 0, 0, 0.62);
+}
+/* 需求⑦：去掉黑底，只留发光字 */
+.sea-title span {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #ffffff;
+  text-shadow:
+    0 0 10px var(--sea, #6fd8ff),
+    0 0 22px var(--sea, #6fd8ff),
+    0 1px 5px rgba(0, 0, 0, 0.9);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 深度尺 ── */
+.ruler {
+  position: absolute;
+  left: 8px;
+  top: 84px;
+  bottom: 150px;
+  width: 46px;
+  /* 标签要探出尺子右侧，所以这一层不裁；裁切交给 .ruler-track */
+  overflow: visible;
+  opacity: 0;
+  /* 需求⑩：开始游戏后从画面左侧滑入 */
+  transform: translateX(-150%);
+  transition: transform 0.44s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease-out;
+}
+.ruler-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: rgba(3, 16, 28, 0.5);
+  border: 1px solid rgba(140, 210, 255, 0.14);
+  overflow: hidden;
+}
+.ruler.on { opacity: 1; transform: translateX(0); }
+.ruler .band {
+  position: absolute;
+  left: 0; right: 0;
+  border-bottom: 1px solid rgba(160, 220, 255, 0.16);
+}
+.ruler .band span {
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: rgba(226, 246, 255, 0.86);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+.ruler .band span i {
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 500;
+  color: rgba(200, 232, 250, 0.5);
+}
+/* 本竿已潜到的最深深度：金色游标 + 标签，带脉冲（"我在这"） */
+.ruler .marker {
+  position: absolute;
+  left: -3px; right: -3px;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+  animation: markerPulse 1.35s ease-in-out infinite;
+}
+@keyframes markerPulse {
+  0%, 100% { box-shadow: 0 0 8px var(--gold); }
+  50% { box-shadow: 0 0 18px var(--gold), 0 0 32px rgba(255, 204, 51, 0.6); }
+}
+
+/* 当前鱼线能到达的最低深度：红色虚线 + 标签 */
+.ruler .limit {
+  position: absolute;
+  left: 0; right: 0;
+  border-top: 2px dashed rgba(255, 90, 72, 0.85);
+}
+
+/* 两条线的文字标签，探出尺子右侧，是"明显"的关键 */
+.ruler .tag {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.ruler .limit .tag {
+  color: #ffd9d3;
+  background: rgba(122, 22, 14, 0.88);
+  border: 1px solid rgba(255, 90, 72, 0.72);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+.ruler .marker .tag {
+  color: #3a2400;
+  background: linear-gradient(180deg, #ffe17a, var(--gold));
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 16px rgba(255, 204, 51, 0.55), 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* ── 声呐探测带（升级项 sonar，0 级时整层不出现）──
+   青色的半透明带 = "鱼钩周围能看到的范围"，带里的青色/金色小刻度 = 鱼的位置。
+   金色刻度是值钱的鱼（身价 ≥ 120），让你一眼判断"值不值得再往下放"。 */
+.ruler .sonar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.ruler .sonar.on { opacity: 1; }
+.ruler .sonar .s-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 5px;
+  background: linear-gradient(
+    180deg,
+    rgba(96, 228, 255, 0.03),
+    rgba(96, 228, 255, 0.22),
+    rgba(96, 228, 255, 0.03)
+  );
+  border-top: 1px solid rgba(130, 238, 255, 0.55);
+  border-bottom: 1px solid rgba(130, 238, 255, 0.55);
+  box-shadow: inset 0 0 14px rgba(96, 228, 255, 0.28);
+}
+.ruler .sonar .s-blips { position: absolute; inset: 0; }
+.ruler .sonar .s-blip {
+  position: absolute;
+  left: 3px;
+  width: 15px;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 2px;
+  background: #8ef0ff;
+  box-shadow: 0 0 7px rgba(120, 236, 255, 0.95);
+}
+.ruler .sonar .s-blip.hot {
+  background: #ffcc33;
+  box-shadow: 0 0 8px rgba(255, 204, 51, 0.95);
+}
+
+/* ── 区域横幅 ── */
+.zone-banner {
+  position: absolute;
+  left: 50%;
+  top: 62px;
+  transform: translateX(-50%) translateY(-8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.35s, transform 0.35s;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+.zone-banner.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+.zone-banner b { font-size: 17px; letter-spacing: 0.28em; }
+.zone-banner span { font-size: 9px; letter-spacing: 0.34em; color: var(--txt-dim); }
+
+/* ── 渔获面板 ── */
+.catch-panel {
+  position: absolute;
+  right: 10px;
+  top: 84px;
+  width: 92px;
+  border-radius: var(--r);
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  overflow: hidden;
+  opacity: 0;
+  /* 需求⑩：开始游戏后从画面右侧滑入 */
+  transform: translateX(125%);
+  transition: transform 0.44s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease-out;
+  max-height: 46%;
+  display: flex;
+  flex-direction: column;
+}
+.catch-panel.on { opacity: 1; transform: translateX(0); }
+.catch-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 9px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--txt-dim);
+  background: rgba(255, 255, 255, 0.05);
+}
+.catch-head b { color: var(--gold); font-size: 14px; font-variant-numeric: tabular-nums; }
+.catch-list { overflow: hidden; padding: 3px 0; }
+.catch-list .row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 2px 9px;
+  font-size: 10px;
+  animation: slideIn 0.22s ease-out;
+}
+.catch-list .row .nm { color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.catch-list .row .vl { color: var(--gold); font-variant-numeric: tabular-nums; margin-left: 4px; }
+.catch-list .row.hot .vl { color: #ff8a3d; }
+@keyframes slideIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+
+/* ── 连击 ── */
+.combo-box {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translate(-50%, 0) scale(0.6);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.18s, transform 0.18s;
+  pointer-events: none;
+}
+.combo-box.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.combo-box b {
+  display: block;
+  font-size: 40px;
+  font-weight: 900;
+  color: var(--gold);
+  text-shadow: 0 0 22px rgba(255, 204, 51, 0.8), 0 3px 0 var(--gold-d), 0 6px 18px rgba(0, 0, 0, 0.6);
+  line-height: 1;
+}
+.combo-box span {
+  font-size: 11px; letter-spacing: 0.22em; color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+}
+
+/* ── 飘字 ── */
+.float-layer { position: absolute; inset: 0; overflow: hidden; }
+.float-txt {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-weight: 900;
+  font-size: 18px;
+  color: var(--gold);
+  text-shadow: 0 2px 0 var(--gold-d), 0 4px 14px rgba(0, 0, 0, 0.75);
+  animation: floatUp 0.95s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.float-txt.bad { color: var(--red); text-shadow: 0 2px 0 #7d1c12, 0 4px 14px rgba(0, 0, 0, 0.75); }
+.float-txt.good { color: #7dffb0; text-shadow: 0 2px 0 #16794a, 0 4px 14px rgba(0, 0, 0, 0.75); }
+.float-txt.sm { font-size: 13px; }
+/* 带图标（内联 SVG）的飘字：图标和文字横向对齐 */
+.float-txt.has-ico { display: inline-flex; align-items: center; gap: 5px; }
+.float-txt.has-ico svg { display: block; flex: 0 0 auto; }
+@keyframes floatUp {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  18% { opacity: 1; transform: translate(-50%, -78%) scale(1.15); }
+  60% { opacity: 1; transform: translate(-50%, -120%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -190%) scale(0.9); }
+}
+
+/* ── 收线按钮 ── */
+.reel-btn {
+  position: absolute;
+  right: 18px;
+  bottom: calc(28px + var(--safe-b));
+  pointer-events: auto;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 26px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe17a, var(--gold) 45%, #e0a418);
+  color: #3a2400;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  box-shadow: 0 8px 0 #9c6d0a, 0 14px 26px rgba(0, 0, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  animation: reelPulse 1.1s ease-in-out infinite;
+}
+.reel-btn.on { display: inline-flex; }
+.reel-btn:active { transform: translateY(4px); box-shadow: 0 4px 0 #9c6d0a, 0 8px 16px rgba(0, 0, 0, 0.5); }
+.reel-btn span { font-size: 14px; }
+@keyframes reelPulse {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* ── 手机入口按钮（待机时出现在屏幕左下角） ── */
+.phone-btn {
+  position: absolute;
+  left: 18px;
+  bottom: calc(28px + var(--safe-b));
+  pointer-events: auto;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px;
+  border: 1px solid rgba(140, 210, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(5, 24, 42, 0.86);
+  color: var(--txt);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+.phone-btn .ico { display: inline-flex; }
+.phone-btn .ico svg { display: block; width: 19px; height: 19px; }
+.phone-btn.on { display: inline-flex; }
+.phone-btn:active { transform: translateY(3px) scale(0.98); }
+
+/* ── 提示 ── */
+/* 需求⑧：去掉黑底，改用亮点字体，透明度做呼吸变化 */
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(38px + var(--safe-b));
+  transform: translateX(-50%);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #ffffff;
+  text-shadow:
+    0 0 10px rgba(160, 230, 255, 0.95),
+    0 0 26px rgba(90, 190, 255, 0.8),
+    0 0 48px rgba(60, 150, 255, 0.5),
+    0 1px 3px rgba(0, 0, 0, 0.95),
+    0 2px 9px rgba(0, 0, 0, 0.85);
+  opacity: 0;
+  transition: opacity 0.3s;
+  white-space: nowrap;
+}
+.hint.on {
+  opacity: 1;
+  /* 先靠 transition 淡入，0.3s 后交给呼吸动画接管透明度 */
+  animation: hintBreath 2.6s ease-in-out 0.3s infinite;
+}
+/* 呼吸下限不能压太低：水面是很亮的浅蓝，白字掉到 0.46 就基本读不出来了 */
+@keyframes hintBreath {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.64; }
+}
+
+/* ============================================================
+   遮罩层（标题 / 商店 / 结算）
+   ============================================================ */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: linear-gradient(180deg, rgba(2, 9, 16, 0.72), rgba(2, 9, 16, 0.92));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  z-index: 10;
+  animation: fadeIn 0.22s ease-out;
+}
+.overlay.hidden { display: none; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.card {
+  width: 100%;
+  max-width: 380px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(12, 40, 64, 0.97), rgba(4, 18, 32, 0.98));
+  border: 1px solid var(--panel-line);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: pop 0.28s cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+@keyframes pop { from { transform: scale(0.9) translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.card h1 {
+  margin: 0 0 2px;
+  font-size: 34px;
+  letter-spacing: 0.06em;
+  font-weight: 900;
+  background: linear-gradient(180deg, #fff2c0, var(--gold) 55%, #c98a0c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-align: center;
+}
+.card .sub {
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  color: var(--txt-dim);
+  margin-bottom: 16px;
+}
+.card h2 {
+  margin: 0 0 14px;
+  font-size: 20px;
+  text-align: center;
+  letter-spacing: 0.1em;
+}
+
+.rulelist {
+  font-size: 12px;
+  line-height: 1.85;
+  color: var(--txt-dim);
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(140, 210, 255, 0.12);
+}
+.rulelist b { color: var(--txt); }
+.rulelist .k { color: var(--cyan); font-weight: 700; }
+.rulelist .g { color: var(--gold); font-weight: 700; }
+.rulelist .r { color: var(--red); font-weight: 700; }
+
+/* ── 商店 ── */
+.wallet {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px;
+  border-radius: var(--r);
+  background: rgba(255, 204, 51, 0.09);
+  border: 1px solid rgba(255, 204, 51, 0.28);
+  margin-bottom: 14px;
+}
+.wallet .amt { font-size: 26px; font-weight: 900; color: var(--gold); font-variant-numeric: tabular-nums; }
+.wallet .lb { font-size: 11px; color: var(--txt-dim); letter-spacing: 0.16em; }
+
+.shop-list { display: flex; flex-direction: column; gap: 9px; margin-bottom: 16px; }
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 11px;
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(140, 210, 255, 0.14);
+  transition: border-color 0.2s, background 0.2s;
+}
+.item.afford { border-color: rgba(255, 204, 51, 0.4); }
+.item.afford:hover { background: rgba(255, 204, 51, 0.07); }
+.item .icon {
+  width: 38px; height: 38px;
+  flex: 0 0 38px;
+  display: grid; place-items: center;
+  border-radius: 11px;
+  background: rgba(111, 216, 255, 0.12);
+  border: 1px solid rgba(111, 216, 255, 0.22);
+  font-size: 19px;
+}
+.item .info { flex: 1; min-width: 0; }
+.item .nm { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.item .nm .lv { font-size: 10px; color: var(--txt-dim); font-weight: 500; letter-spacing: 0.08em; }
+/* ⚠ 这一行必须**只占一行高**：商店每行高度要一致，一旦某行折成两行，
+   它就比旁边高出 16px，整列看着像排版坏了。
+   正常内容下不会触发省略号（verify7 的 B6 会实测「需要宽度 ≤ 可用宽度」，
+   确保一个字都没被截掉）；它防的是以后有人把 desc 写长了。
+
+   ⚠⚠ 这里**不能用 `white-space: nowrap`**。nowrap 会让这一格的 min-content 宽度
+   等于整行文字的宽度，而这个宽度会顺着 `.info` 一路顶到 `.item` 上 ——
+   满级附近实测 `.item` 被撑到 326px，比它所在的 `.shop-list`（318px）还宽，
+   整行横向溢出面板 8px。那比折行更糟：内容被推到手机屏幕外面去了。
+   `-webkit-line-clamp: 1` 不一样：文字**照常换行**（min-content 仍是最长单词，
+   不会顶宽父级），只是只显示第一行、末尾给省略号。 */
+.item .ds {
+  font-size: 11px; color: var(--txt-dim); margin-top: 2px; line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+.item .ds .nx { color: var(--cyan); }
+/* 等级进度条：11 项 × 20 级，用「自动均分」而不是固定宽度 ——
+   20 格固定 15px 会直接撑爆手机里的 .info（约 200px 可用宽）。 */
+.pips { display: flex; gap: 2px; margin-top: 6px; }
+.pips i {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.pips i.f { background: var(--gold); box-shadow: 0 0 7px rgba(255, 204, 51, 0.75); }
+
+/* 商店里的分层小标题（基础 / 新轴 / 进阶）——
+   用 .tier-h 而不是复用 .item，否则 verify 的「商店有几项」计数会被标题污染。 */
+.tier-h {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.22em;
+  color: var(--txt-dim); padding: 5px 0 0 3px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.tier-h:first-child { border-top: none; padding-top: 0; }
+
+.buy {
+  flex: 0 0 auto;
+  min-width: 74px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #ffe17a, var(--gold) 50%, #dda212);
+  color: #3a2400;
+  font-weight: 900;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #9c6d0a;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.buy:active { transform: translateY(2px); box-shadow: 0 1px 0 #9c6d0a; }
+.buy[disabled] {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.34);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.buy.max { background: rgba(125, 255, 176, 0.16); color: #7dffb0; box-shadow: none; }
+/* 「本图满级」和「未解锁」都不是"买不起"，而是"买不了" —— 用更淡的中性色区分 */
+.buy.cap, .buy.lock {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+/* ── 主按钮 ── */
+.btn {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 15px;
+  background: linear-gradient(180deg, #7fe6ff, #2fb0e0 55%, #1c7fae);
+  color: #04202f;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #145f83, 0 10px 22px rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.6);
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #145f83, 0 6px 14px rgba(0, 0, 0, 0.45); }
+.btn.gold {
+  background: linear-gradient(180deg, #ffe17a, var(--gold) 50%, #dda212);
+  color: #3a2400;
+  box-shadow: 0 5px 0 #9c6d0a, 0 10px 22px rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.65);
+}
+.btn.ghost {
+  margin-top: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--txt-dim);
+  box-shadow: none;
+  font-size: 13px;
+  padding: 12px;
+  letter-spacing: 0.08em;
+}
+.btn.ghost:active { background: rgba(255, 255, 255, 0.12); transform: none; }
+
+/* ── 结算 ── */
+.result-rows { margin-bottom: 16px; }
+.rrow {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 4px;
+  border-bottom: 1px dashed rgba(140, 210, 255, 0.14);
+  font-size: 13px;
+  color: var(--txt-dim);
+}
+.rrow:last-child { border-bottom: none; }
+.rrow b { color: var(--txt); font-variant-numeric: tabular-nums; font-size: 15px; }
+.rrow.total { border-top: 2px solid rgba(255, 204, 51, 0.35); margin-top: 6px; padding-top: 12px; }
+.rrow.total b { color: var(--gold); font-size: 27px; }
+.rrow .hi { color: #7dffb0; }
+
+.medal {
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+  margin: -6px 0 12px;
+  animation: pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.escape-list {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin: 4px 0 14px;
+}
+.escape-list span {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 90, 72, 0.14);
+  border: 1px solid rgba(255, 90, 72, 0.3);
+  color: #ffb0a4;
+}
+
+.card::-webkit-scrollbar { width: 5px; }
+.card::-webkit-scrollbar-thumb { background: rgba(140, 210, 255, 0.28); border-radius: 4px; }
+
+@media (max-height: 640px) {
+  .card h1 { font-size: 27px; }
+  .card { padding: 16px; }
+  .item { padding: 8px 9px; }
+  .rulelist { font-size: 11px; line-height: 1.7; }
+}
+
+/* ── 图鉴 ── */
+.cx-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 2px 12px;
+}
+.cx-total { font-size: 11px; color: var(--txt-dim); letter-spacing: 0.08em; }
+.cx-total b { font-size: 19px; color: var(--gold); font-weight: 900; }
+.cx-tiph { font-size: 10px; color: rgba(160, 200, 230, 0.5); text-align: right; }
+
+.codex-list {
+  max-height: 56vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 16px;
+  padding-right: 4px;
+}
+.codex-list::-webkit-scrollbar { width: 5px; }
+.codex-list::-webkit-scrollbar-thumb { background: rgba(140, 210, 255, 0.28); border-radius: 4px; }
+
+.cx-zone { display: flex; flex-direction: column; gap: 8px; }
+/* 两行布局：第一行 海域雅称 + 进度，第二行 功能名 + 深度区间。
+   手机里可用宽度只有 ~300px，四段文字挤一行会把"阳光浅滩"折成两行。 */
+.cx-zone-h {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  border-left: 3px solid var(--zc);
+}
+.cx-zone-h b {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 14px;
+  color: var(--zc);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cx-zone-h i {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 10px;
+  color: rgba(200, 226, 246, 0.62);
+  letter-spacing: 0.16em;
+  font-style: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cx-range {
+  grid-column: 2;
+  grid-row: 2;
+  text-align: right;
+  font-size: 10px;
+  color: var(--txt-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cx-prog {
+  grid-column: 2;
+  grid-row: 1;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--txt);
+  font-variant-numeric: tabular-nums;
+}
+
+.cx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(140, 210, 255, 0.13);
+}
+.cx-item.known { background: rgba(111, 216, 255, 0.06); }
+.cx-item.locked { background: rgba(255, 255, 255, 0.02); }
+.cx-item.haz { border-color: rgba(255, 80, 80, 0.42); background: rgba(255, 60, 60, 0.07); }
+
+.cx-ico {
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: rgba(2, 14, 26, 0.5);
+  border: 1px solid rgba(140, 210, 255, 0.1);
+}
+.cx-info { flex: 1; min-width: 0; }
+.cx-nm { font-size: 13.5px; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+.cx-item.locked .cx-nm { color: rgba(170, 200, 222, 0.46); letter-spacing: 0.18em; }
+.cx-haz {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 800;
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 80, 80, 0.5);
+  border-radius: 999px;
+  padding: 1px 6px;
+  letter-spacing: 0.04em;
+}
+.cx-haz svg { display: block; }
+.cx-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; font-size: 10.5px; flex-wrap: wrap; }
+.cx-hp { display: inline-flex; align-items: center; gap: 1px; color: #ff7a8a; }
+.cx-hp svg { display: block; }
+.cx-val { color: var(--gold); font-weight: 800; font-variant-numeric: tabular-nums; }
+.cx-cnt { color: rgba(160, 200, 230, 0.6); font-variant-numeric: tabular-nums; }
+.cx-lock { color: rgba(150, 180, 205, 0.55); letter-spacing: 0.16em; }
+.cx-desc { font-size: 10.5px; line-height: 1.55; color: var(--txt-dim); margin-top: 4px; }
+.cx-where { font-size: 9.5px; color: rgba(140, 185, 220, 0.55); margin-top: 3px; }
+
+/* ── 图鉴：地图这一级（多地图结构的可见层） ── */
+.cx-map {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 10px 12px;
+  border-radius: 16px;
+  background: rgba(2, 14, 26, 0.34);
+  border: 1px solid rgba(140, 210, 255, 0.1);
+}
+.cx-map-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+.cx-map-h b {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: var(--zc, #6fd8ff);
+  text-shadow: 0 0 14px var(--zc, #6fd8ff);
+}
+.cx-map-h i {
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.2em;
+  color: rgba(190, 222, 244, 0.55);
+}
+.cx-map-h .cx-prog { margin-left: auto; }
+.cx-map-desc {
+  font-size: 10px;
+  line-height: 1.55;
+  color: rgba(160, 200, 230, 0.6);
+  padding: 0 2px;
+  margin-top: -4px;
+}
+.cx-zones { display: flex; flex-direction: column; gap: 13px; }
+.cx-locked-box {
+  padding: 18px 12px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(170, 205, 230, 0.5);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(140, 210, 255, 0.18);
+}
+
+/* ============================================================
+   手机界面（需求④）
+   打开后是一台占满屏幕的巨大智能手机：状态栏 / 桌面（App 网格）/ 常驻 Dock。
+   商店、图鉴、设置都是手机里的 App —— 内容渲染在 .p-app 里，而不是全屏遮罩卡片。
+   ============================================================ */
+.phone-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;                                  /* 低于 .overlay(10)：确认框要能盖在手机上 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(8px + var(--safe-t)) 8px calc(8px + var(--safe-b));
+  background: radial-gradient(circle at 50% 38%, rgba(6, 30, 52, 0.62), rgba(2, 9, 16, 0.9));
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  pointer-events: auto;
+  animation: fadeIn 0.22s ease-out;
+}
+.phone-layer.hidden { display: none; }
+
+.phone {
+  position: relative;
+  height: min(100%, 780px);
+  aspect-ratio: 9 / 19.5;
+  max-width: 100%;
+  padding: 9px;
+  border-radius: 42px;
+  background: linear-gradient(158deg, #38434e, #151c24 38%, #060a0e);
+  box-shadow:
+    0 34px 70px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(170, 205, 235, 0.18),
+    inset 0 1px 1px rgba(255, 255, 255, 0.18);
+  animation: phoneIn 0.4s cubic-bezier(0.2, 1.1, 0.35, 1);
+}
+@keyframes phoneIn {
+  from { transform: scale(0.86) translateY(26px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* 侧边按键（纯装饰，让"这是一台手机"一眼成立） */
+.phone::before,
+.phone::after {
+  content: '';
+  position: absolute;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #4a5764, #1b222a);
+}
+.phone::before { left: -2px; top: 122px; height: 58px; }
+.phone::after { right: -2px; top: 104px; height: 82px; }
+
+.phone-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 34px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #0c4468 0%, #073152 30%, #041d33 58%, #020c16 100%);
+}
+/* 水下壁纸的光柱与气泡（纯装饰） */
+.phone-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 46% at 50% -8%, rgba(190, 245, 255, 0.34), rgba(190, 245, 255, 0) 70%),
+    radial-gradient(30% 60% at 22% 6%, rgba(200, 250, 255, 0.18), rgba(200, 250, 255, 0) 70%),
+    radial-gradient(26% 54% at 74% 2%, rgba(200, 250, 255, 0.14), rgba(200, 250, 255, 0) 70%);
+}
+
+.p-island {
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  transform: translateX(-50%);
+  width: 76px;
+  height: 19px;
+  border-radius: 999px;
+  background: #04070a;
+  z-index: 4;
+}
+.p-status {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 18px 4px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #f2fbff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.p-sys { display: flex; align-items: center; gap: 5px; }
+.p-slot { display: inline-flex; }
+.p-slot svg { display: block; width: 14px; height: 14px; }
+
+.p-body {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.p-home, .p-app {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.p-home.hidden, .p-app.hidden { display: none; }
+.p-home::-webkit-scrollbar, .p-app::-webkit-scrollbar { width: 0; }
+
+/* ── 桌面：地图小部件 + App 网格 ── */
+.p-widget {
+  margin: 8px 14px 2px;
+  padding: 12px 14px;
+  border-radius: 20px;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.06));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+.p-w-map { font-size: 9px; letter-spacing: 0.28em; color: rgba(215, 240, 255, 0.72); }
+.p-w-name {
+  font-size: 25px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  margin: 2px 0 6px;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+.p-w-row { display: flex; align-items: center; gap: 12px; font-size: 11px; font-weight: 700; }
+.p-w-coin { display: inline-flex; align-items: center; gap: 4px; color: var(--gold); font-variant-numeric: tabular-nums; }
+.p-w-depth { color: rgba(206, 234, 252, 0.78); font-variant-numeric: tabular-nums; }
+
+/* 桌面第二块小部件：图鉴收集进度 */
+.p-widget-2 { margin-top: 9px; padding: 11px 14px; }
+.p-w2-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+}
+.p-w2-lb { font-size: 9px; letter-spacing: 0.24em; color: rgba(215, 240, 255, 0.7); }
+.p-w2-row b { font-size: 13px; color: var(--gold); font-variant-numeric: tabular-nums; }
+.p-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+  margin: 7px 0 6px;
+}
+.p-track i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #8fe6ff, var(--gold));
+  box-shadow: 0 0 10px rgba(255, 204, 51, 0.5);
+}
+.p-w2-sub { font-size: 9.5px; color: rgba(200, 230, 250, 0.6); font-variant-numeric: tabular-nums; }
+
+/* 4 个 App（渔具店 / 图鉴 / 航线 / 设置）—— 排成一行，不是 3+1。
+   面板固定 342px，一行分到 ~310px，四列各 ~71px，装得下 56px 的图标和 3 字标签。 */
+.p-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px 8px;
+  padding: 18px 16px 8px;
+}
+.p-app-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #f0faff;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+.p-ico {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: transform 0.12s ease-out;
+}
+.p-ico svg { display: block; width: 28px; height: 28px; }
+.p-app-item:active .p-ico { transform: scale(0.9); }
+.p-ico.shop { background: linear-gradient(158deg, #ffdd7a, #e08b12); }
+.p-ico.codex { background: linear-gradient(158deg, #8fe6ff, #1c7cb4); }
+/* 航线：冰蓝 → 深蓝，和「冰封极地」的配色是一家的 */
+.p-ico.route { background: linear-gradient(158deg, #a8f0e0, #1f7fa8); }
+.p-ico.settings { background: linear-gradient(158deg, #c3d0dd, #56687a); }
+/* 未开放的地图（多地图结构预留）：App 变灰 */
+.p-app-item[disabled] { opacity: 0.42; cursor: default; }
+
+.p-dock {
+  position: relative;
+  z-index: 3;
+  margin: 4px 13px 0;
+  padding: 9px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.11);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.p-cast {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  background: linear-gradient(180deg, #ffe17a, var(--gold) 48%, #dda212);
+  color: #3a2400;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #9c6d0a, inset 0 2px 0 rgba(255, 255, 255, 0.65);
+}
+.p-cast .svg-ico { width: 20px; height: 20px; }
+.p-cast:active { transform: translateY(3px); box-shadow: 0 2px 0 #9c6d0a; }
+.p-bar { height: 22px; display: grid; place-items: center; }
+.p-bar::after {
+  content: '';
+  width: 96px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+/* ── App 视图（商店 / 图鉴 / 设置 共用外壳） ── */
+.p-app-h {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 10px;
+  background: linear-gradient(180deg, rgba(3, 18, 32, 0.94), rgba(3, 18, 32, 0.66));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(140, 210, 255, 0.14);
+}
+.p-back {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 210, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #eaf6ff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.p-back svg { width: 15px; height: 15px; }
+.p-back:active { transform: scale(0.92); }
+.p-app-h b { font-size: 13px; letter-spacing: 0.12em; }
+.p-app-h i { margin-left: auto; font-style: normal; font-size: 9px; color: rgba(180, 215, 240, 0.6); letter-spacing: 0.08em; }
+.p-app-body { padding: 12px 12px 14px; }
+
+/* App 里的内容沿用商店 / 图鉴原有组件，只把"整页卡片"的尺寸约束放开 */
+.p-app-body .codex-list { max-height: none; overflow: visible; }
+.p-app-body .shop-list { margin-bottom: 12px; }
+/* gap 9→8、按钮左右内边距 8→6：一共把 6px 还给中间那列文字。
+   手机面板只有 342px 宽，商店一行分到 318px，扣掉图标和按钮之后留给
+   「说明 · 当前 → 下一级」的只有 174px —— 而攻击力那行（两个数都要显示，
+   `伤害/半径 · 19·61 → 20·63m`）满级附近需要 176px，差 2px 就折行。
+   还回 6px 之后 11 行在 0~19 级全程单行，最紧的一行还留 4px 余量。
+   ⚠ 这两处和 verify7 的 B6/B7 是绑在一起的，别单独改。 */
+.p-app-body .item { padding: 9px 10px; gap: 8px; }
+.p-app-body .item .icon { width: 34px; height: 34px; flex: 0 0 34px; }
+.p-app-body .item .icon svg { width: 19px; height: 19px; }
+/* 左右内边距 8→6：把 4px 还给中间那列文字（见上面 .p-app-body .item 的注释）。
+   价格走 fmtCost 之后按钮本身不会再被撑宽，所以这里收紧一点是安全的。 */
+.p-app-body .buy { min-width: 66px; padding: 8px 6px; font-size: 11.5px; }
+.p-app-body .buy .svg-ico { width: 12px; height: 12px; }
+.p-app-body .cx-item { padding: 7px 8px; gap: 8px; }
+.p-app-body .cx-ico { width: 56px; height: 38px; }
+.p-app-body .cx-nm { font-size: 12.5px; }
+.p-app-body .cx-desc { font-size: 10px; }
+.p-app-body .cx-zone-h { padding: 5px 9px; }
+.p-app-body .cx-zone-h b { font-size: 12.5px; }
+
+/* ── 设置 App ── */
+.p-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(140, 210, 255, 0.13);
+  margin-bottom: 9px;
+}
+.p-row .p-r-ico {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(111, 216, 255, 0.14);
+  color: #cfeaff;
+}
+.p-row .p-r-ico svg { width: 18px; height: 18px; }
+.p-r-t { flex: 1; min-width: 0; }
+.p-r-t b { display: block; font-size: 12.5px; font-weight: 700; }
+.p-r-t span { display: block; font-size: 10px; color: var(--txt-dim); margin-top: 2px; line-height: 1.45; }
+.p-switch {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 27px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.p-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 21px;
+  height: 21px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  transition: transform 0.18s;
+}
+.p-switch.on { background: #34c759; }
+.p-switch.on::after { transform: translateX(19px); }
+.p-row.danger { border-color: rgba(255, 90, 72, 0.4); background: rgba(255, 60, 60, 0.1); }
+.p-row.danger .p-r-ico { background: rgba(255, 90, 72, 0.18); color: #ffb0a4; }
+.p-row.tap { cursor: pointer; }
+.p-row.tap:active { background: rgba(255, 255, 255, 0.1); }
+.p-sec {
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  color: rgba(170, 210, 240, 0.55);
+  margin: 14px 4px 8px;
+}
+.p-note {
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--txt-dim);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(140, 210, 255, 0.1);
+}
+
+/* ── 航线 App（换地图）──
+   一张地图一张卡。宽度预算和商店那一行是同一套约束：面板 342px → 卡片内 ~294px。
+   ⚠ 条件行 `.rt-conds` 里三个条件都用**同一个** `fmtCost` 压缩过的价格，
+     不要在这里换回精确数字 —— `许可证 33,233` 比 `金币 3.3万` 宽 30px，
+     三个条件就会从一行挤成两行。 */
+.rt-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.rt-item {
+  padding: 11px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(140, 210, 255, 0.14);
+}
+/* 当前所在：整卡换成金色系，一眼知道"我在这片海" */
+.rt-item.cur {
+  background: linear-gradient(150deg, rgba(255, 204, 51, 0.16), rgba(255, 204, 51, 0.04));
+  border-color: rgba(255, 204, 51, 0.42);
+}
+.rt-item.owned:not(.cur) { border-color: rgba(125, 255, 176, 0.34); }
+.rt-h { display: flex; align-items: center; gap: 9px; }
+.rt-ico {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(111, 216, 255, 0.16);
+  color: #cfeaff;
+}
+.rt-ico svg { width: 20px; height: 20px; }
+.rt-item.cur .rt-ico { background: rgba(255, 204, 51, 0.2); color: #ffe9a8; }
+.rt-t { flex: 1; min-width: 0; }
+.rt-t b { display: block; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; }
+.rt-t i { display: block; font-style: normal; font-size: 8.5px; letter-spacing: 0.2em; color: rgba(180, 215, 240, 0.6); margin-top: 1px; }
+.rt-tag {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(125, 255, 176, 0.18);
+  color: #7dffb0;
+}
+.rt-tag.on { background: rgba(255, 204, 51, 0.22); color: var(--gold); }
+.rt-desc { font-size: 10px; color: var(--txt-dim); line-height: 1.5; margin-top: 7px; }
+.rt-meta {
+  font-size: 9.5px;
+  color: rgba(190, 225, 248, 0.62);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.rt-conds { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.rt-c {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: rgba(255, 90, 72, 0.14);
+  color: #ff9c8c;
+  border: 1px solid rgba(255, 90, 72, 0.26);
+  font-variant-numeric: tabular-nums;
+}
+.rt-c.ok {
+  background: rgba(125, 255, 176, 0.13);
+  color: #7dffb0;
+  border-color: rgba(125, 255, 176, 0.3);
+}
+/* 「前往 / 许可证」按钮：和商店的 .buy 同一套观感，但占满整行 ——
+   这一行的信息量比商店大（三个条件 + 描述），挤在右边会全部折行。 */
+.rt-go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 9px;
+  padding: 9px;
+  border: none;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #2a1c00;
+  background: linear-gradient(180deg, #ffe066, #e6a80f);
+  box-shadow: 0 3px 0 #9c6d0a;
+  cursor: pointer;
+}
+.rt-go:active { transform: translateY(2px); box-shadow: 0 1px 0 #9c6d0a; }
+.rt-go .svg-ico { width: 12px; height: 12px; }
+.rt-item .buy { width: 100%; margin-top: 9px; min-width: 0; padding: 9px; }
+
+/* 窄高屏幕：手机占满可用高度即可，不要再留白 */
+@media (max-height: 700px) {
+  .phone { border-radius: 34px; padding: 7px; }
+  .phone-shell { border-radius: 28px; }
+  .p-w-name { font-size: 22px; }
+  .p-ico { width: 50px; height: 50px; border-radius: 14px; }
+  .p-ico svg { width: 25px; height: 25px; }
+  .p-grid { gap: 12px 8px; padding: 14px 14px 6px; }
+}
+

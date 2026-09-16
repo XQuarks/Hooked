@@ -1,0 +1,19 @@
+# 开发期产物（不要提交）
+.chrome-profile*/
+shots/
+shots-v2/
+.syntaxcheck/
+.dev/*.json
+
+# 验证脚本每次跑都会新建一个 Chrome profile 目录 + 一个出图目录，
+# 跑几十次就是几十个目录 —— 全部忽略，需要看截图时自己重新跑一次。
+.dev/profile-*/
+.dev/shots-*/
+.dev/shots-probe/
+
+# 脚本中间产物（可随时重新生成）
+.dev/*-out.*
+.dev/*.log
+
+# AI 工作区数据（项目记忆 / 会话日志），不属于游戏本体
+.workbuddy-ai/
