@@ -385,18 +385,19 @@ jobs:
 ├── vendor/
 │   └── three.module.js   # Three.js r160（本地化，无 CDN 依赖）
 ├── src/                  # 游戏源码（10 个 ES Module）
-│   ├── config.js         # 全局数值配置（MAPS 2 张地图 / 38 种鱼 / 深度区 / 大气分层 / 11 项升级 × 20 级 / 稀有度 / 鱼群 / 浮冰 / 扣钱鱼频率 / 手感参数）
-│   ├── icons.js          # 内联 SVG 图标库（30 个：金币 + 29 个 GLYPH；HUD / App / 11 项升级 / 场景）
+│   ├── config.js         # 全局数值配置（MAPS 2 张地图 / 38 种鱼 / 深度区 / 大气分层 / 11 项升级 × 20 级 / 7 把枪 × 6 档 / 稀有度 / 鱼群 / 浮冰 / 扣钱鱼频率 / 手感参数）
+│   ├── icons.js          # 内联 SVG 图标库（37 个：金币 + 36 个 GLYPH；HUD / 5 个 App / 11 项升级 / 7 把枪 / 场景）
 │   ├── audio.js          # WebAudio 程序化音效（零音频文件）
 │   ├── world.js          # 场景 / 正交缩放相机 / 光照 / 水体 / 太空 / 深海地形 / 暗幕 / 爆炸 / 粒子
 │   ├── fish.js           # 鱼类造型工厂（旋转体 + 卡通着色 + 装饰构件）+ 游动/飞行行为 + 三轴翻滚 + 血量 + 对象池
 │   ├── codex.js          # 图鉴排序（地图 → 海域 → 身价）+ canvas 2D 程序化鱼图标（彩色 / 黑色剪影）
 │   ├── hook.js           # 鱼钩 / 鱼线 / 渔获串
-│   ├── ui.js             # HUD / 深度尺 / 手机外壳与 4 个 App / 图鉴 / 结算 / 标题页
+│   ├── ui.js             # HUD / 枪械条 / 深度尺 / 手机外壳与 5 个 App / 图鉴 / 结算 / 标题页
 │   ├── input.js          # 统一输入层（触屏 / 鼠标 / 键盘）
 │   └── game.js           # 主循环 + 状态机 + 扣钱鱼加权抽签 + 存档
 ├── .dev/                 # CDP 验证 / 出图 / 探针脚本（见下方「开发辅助」）
-│   └── gen-docs.mjs      #    从 src/config.js 生成 docs/ 下的数值文档
+│   ├── gen-docs.mjs      #    从 src/config.js 生成 docs/ 下的数值文档
+│   └── loc.mjs           #    把各文件行数生成进 STRUCTURE.md 的体积快照
 ├── shots-v2/             # 旧版人工复核截图（.gitignore 内）
 └── .workbuddy-ai/memory/ # AI 工作记忆与开发日志（.gitignore 内）
 ```
@@ -533,7 +534,8 @@ jobs:
 | `verify4.mjs` | 迭代 4 的 **25 条断言**（地图大标题 / 船摇晃与竿梢同步 / 抛竿抛物线与空中操控 / 水下两条深度线），含抛竿 5 帧序列截图 |
 | `verify3.mjs` | 迭代 3 的 **34 条断言**（状态机 / 11 项升级 / 逻辑反转 / 深海暗度 / 结算 / 屏幕比例 / 存档 / 零报错） |
 | `verify.mjs` | 迭代 2 的 **31 条断言**，保留作为回归基线 |
-| `gen-docs.mjs` | **从 `src/config.js` 生成 `docs/` 下的数值文档**（01~05）。改完 config.js 跑一次即可；`check` 子命令只校验不写盘。详见 [`docs/README.md`](./docs/README.md) |
+| `gen-docs.mjs` | **从 `src/config.js` 生成 `docs/` 下的数值文档**（01~06）。改完 config.js 跑一次即可；`check` 子命令只校验不写盘。详见 [`docs/README.md`](./docs/README.md) |
+| `loc.mjs` | **把各文件行数生成进 `STRUCTURE.md` 的「体积快照」** —— 那张表原本手写，2026-09-16 核对时 13 个数字全部过期。`check` 同上，不一致退出码 1 |
 | `probe-emoji.mjs` | **emoji 字形像素指纹诊断**（颜色数 + 不透明像素数，用来区分"画出来了"和"豆腐块"） |
 | `probe-coin.mjs` | 逐字体排查金币字符能不能渲染（定位"宿主字体缺字形"的问题） |
 | `probe-d1.mjs` | 单点复现"勾鱼不弹名 / 图鉴不写入"这类**静默失败**（NaN 顺着物理传播时症状只在远处显形） |
@@ -587,6 +589,7 @@ node .dev/shots-polar.mjs http://127.0.0.1:8899/index.html   # 改完极地主�
 node .dev/shots-guns.mjs http://127.0.0.1:8899/index.html    # 改完枪店 / 枪械条看这个
 node .dev/curves.mjs check                                   # 改完 config.js 数值看这个
 node .dev/gen-docs.mjs                                       # 改完 config.js 数值 → 同步 docs/
+node .dev/loc.mjs check                                      # 改完任何文件 → 校验 STRUCTURE.md 的体积快照
 node .dev/balance.mjs http://127.0.0.1:8899/index.html
 ```
 

@@ -372,15 +372,15 @@ v0       = 240 + √价值 × 14        起飞初速（launchBase + launchPerSqr
 ├── .gitignore          # 忽略开发产物 / Chrome profile / AI 记忆目录
 ├── vendor/three.module.js
 ├── src/
-│   ├── config.js       # 数值配置：MAPS 多地图 / 38 种鱼 / 深度区 / 大气分层 / 11 项升级 × 20 级 /
+│   ├── config.js       # 数值配置：MAPS 多地图 / 38 种鱼 / 深度区 / 大气分层 / 11 项升级 × 20 级 / GUNS 7 把枪 × 6 档 /
 │   │                   #   lvAt() 等级取值入口 / 扣钱鱼频率（HAZARD_SPAWN）/ 深海参数 / 手感参数（唯一数值来源）
-│   ├── icons.js        # 内联 SVG 图标库（30 个：金币 + 29 个 GLYPH）
+│   ├── icons.js        # 内联 SVG 图标库（37 个：金币 + 36 个 GLYPH）
 │   ├── audio.js        # WebAudio 程序化音效
 │   ├── world.js        # 场景 / 正交缩放相机 / 光照 / 水体 / 太空 / 深海地形 / 暗幕 / 爆炸 / 粒子
 │   ├── fish.js         # 鱼类工厂（LatheGeometry 旋转体 + 卡通着色）+ 游动/飞行行为 + 三轴翻滚 + 血量
 │   ├── codex.js        # 图鉴排序（地图 → 海域 → 身价）+ canvas 2D 程序化鱼图标（彩色 / 黑色剪影）
 │   ├── hook.js         # 鱼钩、鱼线、渔获串
-│   ├── ui.js           # HUD、深度尺、手机外壳与 4 个 App、图鉴、结算面板、标题页
+│   ├── ui.js           # HUD、枪械条、深度尺、手机外壳与 5 个 App、图鉴、结算面板、标题页
 │   ├── input.js        # 统一输入（触屏 / 鼠标 / 键盘）
 │   └── game.js         # 主循环 + 状态机 + 扣钱鱼加权抽签 + 存档
 ├── .dev/               # CDP 验证与出图脚本（见 README 的「开发辅助」）
@@ -389,7 +389,8 @@ v0       = 240 + √价值 × 14        起飞初速（launchBase + launchPerSqr
 └── .workbuddy-ai/memory/  # AI 工作记忆与开发日志（.gitignore 内）
 ```
 
-> `gun.js` 已在迭代 3 删除 —— 武器不再有实体外观，命中判定完全由点击坐标处的爆炸承担。
+> `gun.js` 已在迭代 3 删除、**没有回来** —— v0.4 的枪械是**数据**（`config.js` 的 `GUNS`）+ 开火管线
+> （`game.js` 的 `_tapFire` / `_updateGun`），仍然没有武器实体外观：命中判定发生在玩家指的那个世界坐标上。
 > ⚠ 部署到子目录时**别用 `docs/`**（已被参考文档占用），用 `site/` 之类的名字。
 
 ### 2.10 验收标准
