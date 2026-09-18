@@ -38,7 +38,7 @@ const CODE = [
   'styles.css',
 ];
 const DOCS = [
-  'README.md', 'DESIGN.md', 'EXPANSION.md',
+  'README.md', 'DESIGN.md', 'EXPANSION.md', 'GAMEPLAY.md',
   ...list('docs', (f) => f.endsWith('.md')),
 ];
 

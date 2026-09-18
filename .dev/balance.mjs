@@ -1,14 +1,22 @@
 /**
  * balance.mjs — 手感抽样：不做任何操作时，一竿能潜多深、上升能抓几条
  * 用法：node .dev/balance.mjs
+ *
+ * ⚠ 夹具一律用 `levelsOf()` 造**完整**的等级表，不要手写键名 ——
+ *   漏键会让 `lvAt` 拿到 undefined 并钳到 0，NaN 顺着物理链静默污染（见 fixtures.mjs）。
  */
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { UPGRADE_ORDER } from '../src/config.js';
+import { levelsOf } from './fixtures.mjs';
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const PORT = 9335;
 const URL = 'http://127.0.0.1:8899/index.html';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 「全 LvN」= 所有走等级曲线的项都设成 N（一次性工具没有曲线，设了也没用） */
+const allAt = (n) => levelsOf(Object.fromEntries(UPGRADE_ORDER.map((k) => [k, n])));
 
 async function getTarget(port) {
   for (let i = 0; i < 60; i++) {
@@ -88,9 +96,9 @@ try {
 
   // 每一项升级分别测「不改等级」和「满级」两种情形
   for (const cfg of [
-    { tag: '全 Lv0', levels: { line: 0, hook: 0, sinker: 0, power: 0, lamp: 0 } },
-    { tag: '全 Lv4', levels: { line: 4, hook: 4, sinker: 4, power: 4, lamp: 4 } },
-    { tag: '只升鱼线 Lv4', levels: { line: 4, hook: 0, sinker: 0, power: 0, lamp: 0 } },
+    { tag: '全 Lv0', levels: allAt(0) },
+    { tag: '全 Lv4', levels: allAt(4) },
+    { tag: '只升鱼线 Lv4', levels: levelsOf({ line: 4 }) },
   ]) {
     for (const useAi of [false, true]) {
       const out = await ev(`(()=>{const g=window.__game;

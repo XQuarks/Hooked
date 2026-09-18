@@ -112,6 +112,8 @@ export const GLYPH = {
     <path d="M12 9.6v9.2" fill="none" stroke="#000" stroke-width="1.1" opacity="0.26"/>
   </g>`,
   // 攻击力（升级项）：八芒爆炸星（16 个顶点，见上面的 BURST_8）
+  // ⚠ v0.5：「攻击力」升级项已删除，图标保留备用（枪店/伤害飘字将来可能要用）。
+  //   删掉它要连带确认没有别处 glyph('power') —— 目前全项目零调用。
   power: `<path fill="currentColor" d="M${BURST_8}Z"/>`,
   // 灯具（升级项）：灯泡 + 灯头
   lamp: `<g fill="currentColor">
@@ -129,6 +131,18 @@ export const GLYPH = {
   phone: `<g fill="currentColor">
     <path fill-rule="evenodd" d="M7.4 2.4h9.2A2.4 2.4 0 0 1 19 4.8v14.4a2.4 2.4 0 0 1-2.4 2.4H7.4A2.4 2.4 0 0 1 5 19.2V4.8a2.4 2.4 0 0 1 2.4-2.4Zm.4 2.4v11.4h8.4V4.8Z"/>
     <circle cx="12" cy="19.1" r="1.15"/>
+  </g>`,
+  // 电话（来电 / 通话记录 App）：一个**听筒**剪影。
+  // ⚠ 刻意和 `phone`（智能手机方框）区分开 —— 那个是"手机入口"，这个是"打电话"。
+  //   两者在同一个界面里会同时出现（手机按钮 vs 来电头像），不能撞形。
+  call: `<path fill="currentColor" d="M8.1 3.2c.5-.5 1.35-.42 1.75.17l1.7 2.5c.35.5.3 1.17-.1 1.62l-1.06 1.2a.6.6 0 0 0-.07.7 11.6 11.6 0 0 0 4.3 4.3.6.6 0 0 0 .7-.07l1.2-1.06c.45-.4 1.12-.45 1.62-.1l2.5 1.7c.6.4.67 1.25.17 1.75l-1.3 1.3c-.8.8-2 1.1-3.1.72C12.3 16.6 7.4 11.7 5.3 7.36c-.38-1.1-.08-2.3.72-3.1Z"/>`,
+  // 来电（响铃）：听筒 + 两道声波弧。用于来电横幅 / 通话记录里的"未接"标记。
+  'call-in': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+    <path d="M4.4 4.9c-.4.4-.55 1-.42 1.55 1.5 6.3 6.27 11.07 12.57 12.57.55.13 1.15-.02 1.55-.42l1.4-1.4-3.3-2.2-1.3 1.3A10.9 10.9 0 0 1 8.7 10.1l1.3-1.3-2.2-3.3Z"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" opacity="0.85">
+    <path d="M15.4 3.6a6.6 6.6 0 0 1 5 5"/>
+    <path d="M15.1 7.4a3 3 0 0 1 1.5 1.5"/>
   </g>`,
   // 状态栏：信号 / Wi-Fi / 电量
   signal: `<g fill="currentColor">
@@ -185,35 +199,23 @@ export const GLYPH = {
     <path d="M9.5 9.6v10.9M12 9.6v10.9M14.5 9.6v10.9"/>
   </g>`,
   // 保险：盾牌 + 中间一枚被护住的金币
-  // 保险：雨伞（保险业的通用符号）。
-  // 早先画的是"盾牌 + 内嵌圆圈横杠"，但那个圆圈加横杠在 19px 下会被读成
-  // 禁止标志（⛔）—— 语义正好反了：保险是"帮你兜住"，不是"不许"。
-  insurance: `<path fill="currentColor"
-    d="M12 3.1c-4.6 0-8.4 3.5-8.9 8 0 .5.4.9.9.9h16c.5 0 .9-.4.9-.9-.5-4.5-4.3-8-8.9-8Z"/>
-  <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
-    <path d="M12 3.1v15.2"/>
-    <path d="M12 18.3c0 1.6-1.2 2.8-2.8 2.8"/>
-  </g>`,
-  // 声呐：同心脉冲环（刻意不用 wifi 的三条弧 —— 那个是信号图标）
-  sonar: `<g fill="none" stroke="currentColor" stroke-width="1.9">
-    <circle cx="12" cy="12" r="3.1"/>
-    <circle cx="12" cy="12" r="6.6"/>
-    <circle cx="12" cy="12" r="10.1" stroke-dasharray="4 3"/>
-  </g><circle cx="12" cy="12" r="1.5" fill="currentColor"/>`,
+  // 保险 / 声呐 / 加固 三个图标随对应升级项一起删除（v0.5）。
+  // 它们原来分别是：雨伞（保险）、同心脉冲环（声呐）、两个互扣的链环（加固）。
+  // 需要的话去 git 历史里找 —— 留着不用的 GLYPH 只会让下一个人以为那三项还在。
   // 鱼饵：一条小鱼剪影（鱼饵本身就是小鱼）
   bait: `<g fill="currentColor">
     <path d="M15.2 12c0-2.9-2.6-5-5.8-5-3.6 0-6.6 2.2-6.6 5s3 5 6.6 5c3.2 0 5.8-2.1 5.8-5Z"/>
     <path d="M16 12 22 8.4v7.2Z"/>
   </g><circle cx="6.6" cy="10.4" r="1.15" fill="#000" opacity="0.42"/>`,
-  // 加固：四铆钉钢板
-  // 加固：两个互扣的链环（"这一环更结实了"）。
-  // 早先画的是"钢板 + 4 颗铆钉"，19px 下只剩一个带点的圆角方块，读不出任何意思。
-  // 链环的好处是轮廓本身就是"环环相扣"的形状语言，缩小后依然成立。
-  // ⚠ 不要和 line（线轴）、hook（鱼钩）撞形 —— 那两个都是单一主体 + 一条线，
-  //   这里是两个等大的环错位相扣，形状语言完全不同。
-  rig: `<g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
-    <rect x="3.1" y="7.4" width="10.4" height="9.2" rx="4.6"/>
-    <rect x="10.5" y="7.4" width="10.4" height="9.2" rx="4.6"/>
+  // 快速回收（绞盘，v0.5）：向上的双箭头 + 底下一段卷筒。
+  // 双箭头是"加速"的通用形状语言，19px 下依然成立；
+  // ⚠ 刻意和 `winch`（绞盘本身：卷筒 + 摇柄）区分开 —— 那个是"装备"，
+  //   这个是"动作"，所以形态必须不同（一个静态器件、一个动态箭头）。
+  'fast-reel': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.4v9.2"/>
+    <path d="M8.2 7.2 12 3.4l3.8 3.8"/>
+    <path d="M7.6 16.2h8.8"/>
+    <path d="M7.6 19.6h8.8" opacity="0.55"/>
   </g>`,
   // 航线（地图 App）：一条虚线航路 + 起点实心点 / 终点空心圈。
   // 刻意不用"地图折叠"那种画法 —— 12px 下折角会糊成一坨，读不出是地图。
@@ -222,6 +224,16 @@ export const GLYPH = {
     stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-dasharray="3.2 2.8"/>
   <circle cx="5.2" cy="18.6" r="2.3" fill="currentColor"/>
   <circle cx="19.4" cy="6.2" r="2.1" fill="none" stroke="currentColor" stroke-width="1.9"/>`,
+  // 挂锁（v0.7 第三批）：枪店 / 渔具店里"还没上架"的那一项用它
+  lock: `<rect x="5.2" y="10.2" width="13.6" height="9.4" rx="2.4" fill="currentColor"/>
+  <path d="M8.3 10.2V7.9a3.7 3.7 0 0 1 7.4 0v2.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+
+  // 船（v0.7 船厂）：船体梯形 + 桅杆 + 三角帆。
+  // ⚠ 19px 下只能靠**剪影**认人，所以帆和船体必须连成一块实的形状，
+  //   不要画成一堆细线（那看起来像一团乱码）。
+  boat: `<path fill="currentColor" d="M3.4 15.2h17.2l-2.4 4.4H5.8Z"/>
+  <path fill="currentColor" d="M12 3.2v11.4h6.4c-1.7-4.2-3.6-8-6.4-11.4Z"/>
+  <rect x="11.4" y="2.6" width="1.2" height="12.6" rx="0.6"/>`,
   // 冰山：水上的尖角 + 水下的庞大冰体（"露出来的只是一角"）。
   // 用两层不同不透明度的纯色块叠出来 —— 不用 <defs>+gradient（同名 id 会互相冲突）。
   iceberg: `<path fill="currentColor" d="M12 2.6 15.8 8.9H8.2Z"/>

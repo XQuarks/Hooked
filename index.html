@@ -61,9 +61,41 @@
       <i class="gb-meter"><b id="gunMeter"></b></i>
     </div>
 
-    <!-- 唯一的常驻入口：手机（商店 / 图鉴 / 设置 都在里面） -->
-    <button id="phoneBtn" class="phone-btn"><span class="ico" id="phoneIco"></span>手 机</button>
+    <!-- 唯一的常驻入口：手机（商店 / 图鉴 / 设置 都在里面）。
+         v0.7：按钮本体就是**一部小手机**（机身 + 屏幕 + 听筒 + HOME 条），
+         不再是"图标 + 手 机"文字 —— 它一直在待机界面左下角，
+         画成手机之后"点它能打开手机"不需要一个字来解释。见 styles.css 的 .phone-btn -->
+    <button id="phoneBtn" class="phone-btn" aria-label="打开手机">
+      <span class="ph-body"><i class="ph-notch"></i><span class="ph-screen" id="phoneIco"></span></span>
+      <i class="ph-dot" id="phoneDot"></i>
+    </button>
+    <!-- 来电（v0.7）：模仿 iPhone 来电界面 —— 从屏幕上方滑入的来电卡
+         （圆形头像 + 来电人 + 「来电中…」 + 挂断 / 接听两个圆钮）。
+         点卡片本身 = 打开手机并直接进入来电界面；两个圆钮分别是忽略 / 接听。
+         ⚠ 它仍然**不阻塞任何操作** —— 卡片以外照样能点画面抛竿（见 config 的 CALLS 四条硬约束）。 -->
+    <div id="callBanner" class="ios-call">
+      <span class="ios-ava" id="callBannerIco"></span>
+      <span class="ios-txt"><b id="callBannerWho">来电</b><i id="iosState">来电中…</i></span>
+      <span class="ios-btns">
+        <button class="ios-btn decline" id="callDecline" aria-label="忽略"></button>
+        <button class="ios-btn accept" id="callAccept" aria-label="接听"></button>
+      </span>
+    </div>
+    <!-- 新货上架推送（v0.7 第三批）：模仿 iPhone 的推送通知 —— 一把枪从"锁着"变"可见"
+         的那一刻从顶部滑入，点它直接打开枪店（红点就是在那一步消失的）。
+         ⚠ 和来电卡一样**不阻塞操作**；自动收起之后红点仍留在手机上，直到玩家点开枪店。
+         ⚠ 与来电共用一套视觉语言但不共用一张卡：来电要你做选择，推送只是"有新东西可看"，
+           两者长一样的话玩家会开始害怕每一次震动。 -->
+    <button id="newsBanner" class="ios-news" aria-label="枪店新货上架">
+      <span class="ios-ava news-ava" id="newsIco"></span>
+      <span class="ios-txt"><b id="newsTitle">枪店 · 新货上架</b><i id="newsBody"></i></span>
+      <span class="ios-now">现在</span>
+    </button>
     <button id="reelBtn" class="reel-btn">收线 <span>▲</span></button>
+    <!-- 快速回收（绞盘，v0.5）：只在**上升阶段 + 已买绞盘**时出现。
+         按一下 = 本竿剩下的上升段全速收线（见 config 的 FAST_REEL_MUL）。
+         图标由 ui._fillIcons() 注入 SVG，这里留空避免 emoji 闪一下。 -->
+    <button id="fastReelBtn" class="fast-reel-btn"><span class="ico" id="fastReelIco"></span>快速回收</button>
     <div id="hint" class="hint"></div>
   </div>
 

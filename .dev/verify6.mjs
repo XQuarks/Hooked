@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const PORT = 9353;
+const PORT = Number(process.env.VB_PORT || 9353);   // ⚠ 可用 VB_PORT 覆盖：上一次跑被打断时 Chrome 会占着端口，新一轮会"连到旧现场"
 const URL = process.argv[2] || 'http://127.0.0.1:8899/index.html';
 const OUT = path.resolve('.dev/shots-v6');
 
@@ -121,6 +121,16 @@ try {
   await waitFor('window.__game.state === "idle"');
   check('A2 点开始钓鱼进入待机', (await ev('window.__game.state')) === 'idle');
 
+  // ⚠ 把 config 挂到 window 上，后面的探针才能用 `window.__cfg.UPGRADE_ORDER.length` 之类
+  //   的**现值**去断言（而不是写死"11 项"这种会随设计变更漂走的数字）。
+  //   ⚠⚠ 少了这一步的后果很阴险：探针里 `window.__cfg.X` 抛错 → ev 返回错误对象 →
+  //      JSON.parse 失败 → 两个 undefined 相比**恰好为真** → 断言"空过"。
+  //      （C5 就这么假通过过一轮，所以这里显式写上，并加一条 A2b 钉住它。）
+  await ev(`(async()=>{ window.__cfg = await import('./src/config.js'); return 'ok'; })()`);
+  check('A2b 测试用的 window.__cfg 已注入（探针拿现值断言的唯一入口）',
+    (await ev('typeof window.__cfg?.UPGRADE_ORDER?.length')) === 'number',
+    'UPGRADE_ORDER.length = ' + await ev('window.__cfg.UPGRADE_ORDER.length'));
+
   // ── B 需求①：扣钱鱼占比 ─────────────────────────────────
   const stat = J(await ev(`(async()=>{
     const C = await import('./src/config.js');
@@ -204,13 +214,22 @@ try {
   await ev('window.__game.save.coins = 99999; window.__game.openPhone(); window.__game.ui.openApp("shop");');
   await rafWait(400);
   const shopCoin = J(await ev(`JSON.stringify((()=>{
+    const cfg = window.__cfg;
     const btns = [...document.querySelectorAll('#pApp .buy')];
-    return { n: btns.length, withSvg: btns.filter(b=>b.querySelector('svg')).length,
+    // ⚠ 分段解锁（v0.6）：本图货架上还没上架的项，按钮是「未解锁」且**故意不带价格** ——
+    //   它本来就不该有金币图标。所以这里只统计"真的能买的那些按钮"。
+    const buyable = btns.filter(b=>!b.classList.contains('lock'));
+    return { n: btns.length, total: cfg.UPGRADE_ORDER.length,
+             locked: btns.filter(b=>b.classList.contains('lock')).length,
+             withSvg: buyable.filter(b=>b.querySelector('svg')).length,
              emoji: btns.some(b=>b.textContent.includes('\\u{1FA99}')) };
   })())`));
-  check('C5 商店里每个购买按钮都带 SVG 金币图标',
-    shopCoin.n === 11 && shopCoin.withSvg === 11 && !shopCoin.emoji,
-    `${shopCoin.withSvg}/${shopCoin.n}`);
+  // ⚠ 项数从页面上的 config **现取**，不写死 —— 写死的话每加/删一项升级都要来改断言，
+  //   而漏改的症状是"断言失败，但你以为是代码坏了"。
+  check('C5 商店里每个能买的按钮都带 SVG 金币图标（未解锁的那一行不带价格）',
+    shopCoin.n === shopCoin.total && shopCoin.withSvg === shopCoin.n - shopCoin.locked
+    && !shopCoin.emoji,
+    `${shopCoin.withSvg}/${shopCoin.n} 带图标（未解锁 ${shopCoin.locked} 行不计）`);
 
   // 图鉴里只有"已钓到"的鱼才显示身价，所以先塞几条解锁记录
   await ev(`(()=>{ const g = window.__game;
@@ -244,12 +263,12 @@ try {
   await rafWait(300);
   const shopIcons = J(await ev(`JSON.stringify((()=>{
     const icons = [...document.querySelectorAll('#pApp .item .icon')];
-    return { n: icons.length,
+    return { n: icons.length, total: window.__cfg.UPGRADE_ORDER.length,
       allSvg: icons.every(i => !!i.querySelector('svg')),
       leftover: icons.map(i => i.textContent.trim()).filter(Boolean) };
   })())`));
-  check('C8 商店 11 项升级图标全部是内联 SVG（不再是 1 个 SVG + 4 个彩色 emoji 混排）',
-    shopIcons.n === 11 && shopIcons.allSvg && shopIcons.leftover.length === 0,
+  check('C8 商店每一项升级图标都是内联 SVG（不再是 SVG + 彩色 emoji 混排）',
+    shopIcons.n === shopIcons.total && shopIcons.allSvg && shopIcons.leftover.length === 0,
     `${shopIcons.n} 项 · 纯 SVG=${shopIcons.allSvg} · 残留文字 ${JSON.stringify(shopIcons.leftover)}`);
 
   const hudIco = J(await ev(`JSON.stringify({
@@ -403,11 +422,11 @@ try {
       time: document.getElementById('pTime').textContent,
       statusSvg: document.querySelectorAll('.p-sys svg').length };
   })())`));
-  check('E5 桌面有应用列表：渔具店 / 枪店 / 鱼图鉴 / 航线 / 设置 五个 App',
-    home.n === 5 && home.ids.join(',') === 'shop,gunshop,codex,route,settings'
-      && home.names[0].includes('渔具店') && home.names[1].includes('枪店')
-      && home.names[2].includes('鱼图鉴') && home.names[3].includes('航线')
-      && home.names[4].includes('设置'),
+  check('E5 桌面有应用列表：电话 / 渔具店 / 枪店 / 鱼图鉴 / 航线 / 设置 六个 App',
+    home.n === 6 && home.ids.join(',') === 'call,shop,gunshop,codex,route,settings'
+      && home.names[0].includes('电话') && home.names[1].includes('渔具店')
+      && home.names[2].includes('枪店') && home.names[3].includes('鱼图鉴')
+      && home.names[4].includes('航线') && home.names[5].includes('设置'),
     JSON.stringify(home.names));
   check('E6 手机有状态栏（时钟 + 信号/Wi-Fi/电量）、桌面小部件，且**没有**抛竿 Dock',
     home.statusSvg === 3 && /^\d{1,2}:\d{2}$/.test(home.time) && home.hasWidget
@@ -426,14 +445,16 @@ try {
              homeHidden: document.getElementById('pHome').classList.contains('hidden'),
              appShown: !document.getElementById('pApp').classList.contains('hidden'),
              back: !!document.querySelector('#pApp [data-back]'),
-             items: items.length, buyDisabled: buy ? buy.disabled : null,
+             items: items.length, total: window.__cfg.UPGRADE_ORDER.length,
+             buyDisabled: buy ? buy.disabled : null,
              coins: g.save.coins, lv0: g.save.levels.line };
   })())`));
   check('E7 商店是手机里的一个 App（有 App 标题栏 + 返回键，桌面让位）',
     shopApp.title === '渔 具 店' && shopApp.homeHidden && shopApp.appShown && shopApp.back,
     JSON.stringify({ title: shopApp.title, back: shopApp.back }));
-  check('E8 商店 App 里 11 项升级齐全、金币足够时可购买',
-    shopApp.items === 11 && shopApp.buyDisabled === false, `${shopApp.items} 项 · 可买=${!shopApp.buyDisabled}`);
+  check('E8 商店 App 里升级项齐全、金币足够时可购买',
+    shopApp.items === shopApp.total && shopApp.buyDisabled === false,
+    `${shopApp.items} 项（应 ${shopApp.total}）· 可买=${!shopApp.buyDisabled}`);
 
   await ev(`document.querySelector('#pApp .buy[data-k="line"]').click()`);
   await rafWait(320);
@@ -441,10 +462,11 @@ try {
     coins: window.__game.save.coins, lv: window.__game.save.levels.line,
     stillShop: document.querySelector('#pApp .p-app-h b').textContent,
     items: document.querySelectorAll('#pApp .item').length,
+    total: window.__cfg.UPGRADE_ORDER.length,
   })`));
   check('E9 在 App 内购买生效且原地刷新（不跳出手机）',
     bought.lv === shopApp.lv0 + 1 && bought.coins < shopApp.coins
-      && bought.stillShop === '渔 具 店' && bought.items === 11,
+      && bought.stillShop === '渔 具 店' && bought.items === bought.total,
     `Lv${shopApp.lv0}→Lv${bought.lv} · 金币 ${shopApp.coins}→${bought.coins}`);
   await shot('V6-E-shop');
 
@@ -610,6 +632,139 @@ try {
   await shot('V6-F-air-spin');
   check('F6 空中旋转截图已出（用于人工复核观感）', spinShot.n > 0, `空中鱼 ${spinShot.n} 条`);
 
+  // ── H 来电引导（v0.6）────────────────────────────────────
+  //
+  // 这套系统解决的是"玩家不知道该花钱"：商店 7 项 + 枪店 7 把开局全可见，
+  // 玩家可能一路只升鱼线、永远不碰枪店，然后在深层遇到打不动的血牛时找不到出口。
+  // 电话在**刚好需要知道**的那一刻把玩家送过去（见 config.js 的 CALLS 注释）。
+  console.log('\n── H 来电引导 ──');
+  const callSetup = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
+    g.ui.closePhone();
+    // 铺一个"刚开局"的干净存档（夹具从 UPGRADE_ORDER 现铺，不手写键名）
+    g.save.calls = []; g.save.lastCallCast = -999; g.save.casts = 0;
+    g.save.codex = {}; g.save.mapBest = {}; g.save.drop = { on:false, depth:0 };
+    g.save.levels = Object.fromEntries(cfg.UPGRADE_ORDER.map(k=>[k,0]));
+    g.applyUpgrades(); g.showIdle();
+    const c0 = g.pendingCall();
+    const before = { id: c0 && c0.id,
+      ringing: document.getElementById('phoneBtn').classList.contains('ringing') };
+    g.save.casts = 3; g.showIdle();
+    const c1 = g.pendingCall();
+    return { before, after: c1 && c1.id,
+      ringing: document.getElementById('phoneBtn').classList.contains('ringing'),
+      banner: document.getElementById('callBanner').classList.contains('on'),
+      who: document.getElementById('callBannerWho').textContent };
+  })())`));
+  check('H1 第 3 竿之前不响铃；到第 3 竿小手机开始晃动 + 顶部滑入 iPhone 式来电卡',
+    callSetup.before.id === null && callSetup.before.ringing === false
+    && callSetup.after === 'shop-intro' && callSetup.ringing === true && callSetup.banner === true,
+    `之前=${callSetup.before.id} · 之后=${callSetup.after} · 晃动=${callSetup.ringing} · 来电卡=${callSetup.banner} · 来电人「${callSetup.who}」`);
+  await shot('H1-call-card');
+  // 卡片上的两个圆钮必须真的存在（挂断 / 接听）—— v0.7 从"一条细横幅"改成了 iPhone 式卡片
+  const card = J(await ev(`JSON.stringify((()=>{const q=(s)=>document.querySelector(s);
+    return { accept: !!q('#callAccept'), decline: !!q('#callDecline'),
+      ava: q('#callBannerIco') ? q('#callBannerIco').className : '',
+      acceptSvg: !!(q('#callAccept') && q('#callAccept').querySelector('svg')),
+      declineSvg: !!(q('#callDecline') && q('#callDecline').querySelector('svg')),
+      phoneShape: !!document.querySelector('#phoneBtn .ph-body .ph-screen'),
+      state: q('#iosState') ? q('#iosState').textContent : '' };})())`));
+  check('H1b 来电卡是 iPhone 样式：头像 + 状态行 + 接听/挂断两个圆钮；手机按钮本身是小手机造型',
+    card.accept === true && card.decline === true && card.acceptSvg === true
+    && card.declineSvg === true && card.phoneShape === true && /ios-ava/.test(card.ava)
+    && /来电/.test(card.state),
+    `接听=${card.accept} 挂断=${card.decline} 头像「${card.ava}」 手机造型=${card.phoneShape} 状态「${card.state}」`);
+
+  const answered = J(await ev(`JSON.stringify((()=>{const g=window.__game;
+    document.getElementById('callBanner').click();
+    const q = (s) => document.querySelector(s);
+    return { open: g.phoneOpen, app: g.ui._phone.app,
+      who: q('#pApp .call-who') ? q('#pApp .call-who').textContent : null,
+      lines: document.querySelectorAll('#pApp .call-line').length,
+      hasNext: !!q('#callNext'), hasGo: !!q('#callGo') };
+  })())`));
+  check('H2 点横幅 → 打开手机并**直接**进入来电界面（不用自己找电话 App）',
+    answered.open === true && answered.app === 'call' && answered.lines === 1
+    && answered.hasNext === true && answered.hasGo === false,
+    `手机=${answered.open} · App=${answered.app} · 已出 ${answered.lines} 句 · 来电人「${answered.who}」`);
+
+  const advanced = J(await ev(`JSON.stringify((()=>{const g=window.__game;
+    const steps = [];
+    for (let i=0;i<10;i++){
+      const n = document.querySelector('#callNext');
+      if (!n) break;
+      n.click();
+      steps.push(document.querySelectorAll('#pApp .call-line').length);
+    }
+    const q = (s) => document.querySelector(s);
+    return { steps, lines: document.querySelectorAll('#pApp .call-line').length,
+      hasGo: !!q('#callGo'), goText: (q('#callGo')||{}).textContent || '',
+      hasHang: !!q('#callHang'), hasNext: !!q('#callNext') };
+  })())`));
+  check('H3 对话**逐句**推进，最后一句之后才出现「挂断 / 去 X」',
+    advanced.lines >= 4 && advanced.steps.length >= 3 && advanced.hasGo === true
+    && advanced.hasHang === true && advanced.hasNext === false,
+    `推进 ${advanced.steps.length} 次 → 共 ${advanced.lines} 句 · 按钮「${advanced.goText}」`);
+
+  const ended = J(await ev(`JSON.stringify((()=>{const g=window.__game;
+    document.querySelector('#callGo').click();
+    const c = g.pendingCall();
+    return { heard: g.save.calls.slice(), lastCast: g.save.lastCallCast,
+      app: g.ui._phone.app,
+      ringing: document.getElementById('phoneBtn').classList.contains('ringing'),
+      banner: document.getElementById('callBanner').classList.contains('on'),
+      pending: c && c.id };
+  })())`));
+  check('H4 点「去 渔具店」→ 记下已听、**直接跳到渔具店**、不再震动',
+    ended.heard.includes('shop-intro') && ended.app === 'shop'
+    && ended.ringing === false && ended.banner === false,
+    `已听=${JSON.stringify(ended.heard)} · 跳到=${ended.app} · 震动=${ended.ringing}`);
+  check('H5 同一通电话不会响第二次', ended.pending !== 'shop-intro', `下一条=${ended.pending}`);
+
+  const gap = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
+    g.ui.closePhone();
+    // 把"第二通"的条件也满足（鱼线 Lv2），但不推进竿数 → 应被 CALL_GAP 挡住
+    g.save.levels.line = 2; g.applyUpgrades(); g.showIdle();
+    const blocked = g.pendingCall();
+    g.save.casts = g.save.lastCallCast + cfg.CALL_GAP; g.showIdle();
+    const ok = g.pendingCall();
+    return { blocked: blocked && blocked.id, ok: ok && ok.id, gap: cfg.CALL_GAP,
+      last: g.save.lastCallCast, casts: g.save.casts };
+  })())`));
+  check('H6 两通之间至少隔 CALL_GAP 竿（防止一次待机收到三通电话）',
+    gap.blocked === null && gap.ok === 'shop-drop',
+    `间隔不足=${gap.blocked} · 够了之后=${gap.ok}（上一通在第 ${gap.last} 竿 · 现在第 ${gap.casts} 竿 · GAP=${gap.gap}）`);
+
+  const meta = J(await ev(`JSON.stringify((()=>{const cfg=window.__cfg;
+    const ids = cfg.CALLS.map(c=>c.id);
+    const appIds = ['call','shop','gunshop','codex','route','boat','settings'];
+    return {
+      n: cfg.CALLS.length,
+      dup: ids.filter((x,i)=>ids.indexOf(x)!==i),
+      badGoto: cfg.CALLS.filter(c=>c.goto && !appIds.includes(c.goto)).map(c=>c.id),
+      emptyLines: cfg.CALLS.filter(c=>!Array.isArray(c.lines)||!c.lines.length).map(c=>c.id),
+      noWhen: cfg.CALLS.filter(c=>!c.when||!Object.keys(c.when).length).map(c=>c.id),
+      gunCalls: cfg.CALLS.filter(c=>c.goto==='gunshop').length,
+      // v0.7（第 4/5 条）：船厂 / 码头管理员那几通必须在表里
+      boatCalls: cfg.CALLS.filter(c=>/船厂|码头/.test(c.who)).length,
+      // ⚠ v0.7：电话里**不许再出现「攻击力」这个词**（那是一条已经不存在的升级轴，
+      //   说起来像在骗玩家）。这条断言就是 item 2 的守卫。
+      attackTalk: cfg.CALLS.filter(c=>c.lines.some(t=>/攻击力/.test(t))).map(c=>c.id),
+      whoSet: [...new Set(cfg.CALLS.map(c=>c.who))],
+    };
+  })())`));
+  check('H7 电话表自洽：id 唯一、goto 是真实 App、都有对话与触发条件',
+    meta.dup.length === 0 && meta.badGoto.length === 0
+    && meta.emptyLines.length === 0 && meta.noWhen.length === 0,
+    `${meta.n} 通 · 重复=${meta.dup.join(',')||'无'} · 坏 goto=${meta.badGoto.join(',')||'无'} · 空对话=${meta.emptyLines.join(',')||'无'}`);
+  // A6b（"攻击力现在只能在枪店买到，不买枪的玩家没有伤害出口"）的解法就落在这里：
+  // 电话必须**明确**把"打不动 → 换更好的武器"这条因果说给玩家听，并且把他送过去。
+  // ⚠ v0.7 起措辞改了：「攻击力」这个词在游戏里已经不存在（并进枪械了），
+  //   台词改成"想要好武器就来店里"——所以这里连**用词**一起钉住。
+  check('H8 A6b 的解法确实落进了电话：枪店来电 ≥ 2 通、把"打不动 → 换更好的武器"说清楚，且不再提「攻击力」',
+    meta.gunCalls >= 2 && meta.whoSet.some((w) => w.includes('枪店'))
+    && meta.attackTalk.length === 0,
+    `枪店来电 ${meta.gunCalls} 通 · 来电人 ${JSON.stringify(meta.whoSet)} · 提到「攻击力」的 ${meta.attackTalk.length} 通`);
+
   // ── G 回归 ──────────────────────────────────────────────
   const loop = J(await ev(`(async()=>{
     const g = window.__game;
@@ -630,6 +785,25 @@ try {
     loop.afterResult === 'result' && loop.s1 === 'ascend' && loop.s2 === 'air',
     JSON.stringify(loop));
   check('G2 全程控制台零报错', errors.length === 0, errors.slice(0, 3).join(' | ') || 'clean');
+
+  // ── H9 = GAMEPLAY §6.2 B10 的回归断言（v0.7 第三批补上）─────────
+  // 历史事故：许可证退役之后 `save.licenses` 恒为空数组，而 `_callReady` 还在读它 ——
+  // 两通带 `when.map` 的电话（shop-winch / shop-newsea）从此**永远不响**，
+  // 并且 296 条断言一条都没拦住。这条断言就是那个窟窿的补丁：
+  // **故意把 licenses 留成空数组**，只给"海图 + 船"—— 旧实现在这里必挂。
+  const h9 = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
+    g.ui.closePhone();
+    g.save.calls = cfg.CALLS.filter(c => c.id !== 'shop-winch').map(c => c.id);   // 其它都标记已听
+    g.save.lastCallCast = -999;
+    g.save.casts = 25;
+    g.save.chart = true; g.save.boats = { owned: ['golden'], current: 'golden' };
+    g.save.licenses = [];                       // ⚠ 故意保持空：读 licenses 的旧实现会判"没到过极地"
+    g.save.mapBest = { polar: 300 };
+    g.applyUpgrades(); g.showIdle();
+    const c = g.pendingCall();
+    return { id: c && c.id };})())`));
+  check('H9 B10 回归：到过极地（海图 + 船）之后，带 when.map 的电话照常响 —— 判定不读 licenses',
+    h9.id === 'shop-winch', `待播的电话 = ${h9.id}（应为 shop-winch）`);
 
   // ── 汇总 ────────────────────────────────────────────────
   const pass = results.filter((r) => r.ok).length;

@@ -38,7 +38,44 @@ const {
   FISH_DENSITY, HAZARD_SPAWN, SPAWN_TOP_MARGIN, MODEL_SCALE,
   ICEBERG, ALTITUDE_BANDS, DEEP, TUNING, SAVE_KEY,
   GUNS, GUN_ORDER, GUN_MAX_LEVEL, GUN_GROWTH, gunById, gunStats, gunUpgradeCost,
+  CALLS, CALL_GAP,
+  CHART, BOATS, BOAT_UNLOCK_CAST,
 } = C;
+
+/** App id → 中文名（电话触发条件里会用到） */
+const APP_NAME = {
+  call: '电话', shop: '渔具店', gunshop: '枪店',
+  codex: '图鉴', route: '航线', boat: '船厂', settings: '设置',
+};
+
+/**
+ * 把一条电话的触发条件翻译成人话（doc05 用）。
+ *
+ * ⚠⚠ **新增条件字段时必须同步这里** —— 漏了的话文档会印出一个空的触发条件，
+ *     而读者会以为那条电话"无条件就会响"。
+ *     这个坑**在 v0.7 真的踩了**：新增 `chart` / `boat` / `appLocked` 三个字段时
+ *     没同步本函数，于是 `docs/05` 把三通有门槛的电话印成了「（无条件）」——
+ *     其中两通（码头管理员老陈）明明要求"已经拿到海图"才响。
+ *     **凡是在 `_callReady()` 里加了判定，就回来加一行。**
+ */
+function callWhenText(when = {}) {
+  const bits = [];
+  if (when.casts != null) bits.push(`累计抛竿 ≥ ${when.casts}`);
+  if (when.depth != null) bits.push(`本图潜到过 ${when.depth}m`);
+  if (when.codex != null) bits.push(`图鉴解锁 ≥ ${when.codex} 种`);
+  // ⚠ v0.7 起 `when.map` 的语义 = "已到过那张图"（= `mapProgress().owned`，与分段解锁同源），
+  //   不再是"拿到那张图的许可证" —— 许可证已经退役。
+  if (when.map != null) bits.push(`已到过「${(MAPS.find((m) => m.id === when.map) || {}).name || when.map}」`);
+  if (when.chart != null) bits.push(when.chart ? `已拿到${CHART.name}` : `还没拿到${CHART.name}`);
+  if (when.boat != null) bits.push(when.boat ? '已拥有一艘船' : '还没有船');
+  if (when.appLocked != null) bits.push(`${APP_NAME[when.appLocked] || when.appLocked} App 还没解锁`);
+  if (when.level) {
+    for (const [k, n] of Object.entries(when.level)) {
+      bits.push(`${(UPGRADES[k] || {}).name || k} ≥ Lv${n}`);
+    }
+  }
+  return bits.length ? bits.join(' + ') : '（无条件）';
+}
 
 // ───────────────────────────── 小工具 ─────────────────────────────
 const MAP_NAME = new Map(MAPS.map((m) => [m.id, m.name]));
@@ -46,6 +83,15 @@ const ZONE_BY_ID = new Map(ZONES.map((z) => [z.id, z]));
 
 /** 一张地图的深度上限 */
 const depthOf = (m) => mapMaxDepth(m);
+
+/**
+ * 一张地图的"换图门槛"人话描述（v0.7 第二批：许可证退役，改成"海图 + 船"）。
+ * ⚠ 门槛的**唯一判定来源**是 `game.js` 的 `mapProgress()` —— 这里只是把它印出来。
+ *   改门槛时别忘了回来同步（这也是 gen-docs 一贯的"派生数据"约定）。
+ */
+const mapGateText = (i) => (i === 0
+  ? '出生地（无条件）'
+  : `${CHART.name} + 一艘船（${fmt(BOATS[0].price)} 金币）`);
 
 /** 实际刷鱼数 = max(1, round(count × FISH_DENSITY))（与 game.js::spawnFish 一致） */
 const realCount = (z) => Math.max(1, Math.round(z.count * FISH_DENSITY));
@@ -108,12 +154,15 @@ function doc01() {
 
   parts.push(`## 1. 地图总表
 
-| 地图 | id | 英文 | 深度 | 等级闸门 | 许可证 | 机制钩子 |
+| 地图 | id | 英文 | 深度 | 等级闸门 | 换图门槛 | 机制钩子 |
 |---|---|---|---:|---:|---:|---|
-${MAPS.map((m, i) => `| **${m.name}** | \`${m.id}\` | ${m.en} | ${depthOf(m)} m | Lv${levelCapForMap(i)} | ${m.license ? fmt(m.license) + ' 金币' : '免费（初始图）'} | ${m.hook ? '`' + m.hook + '`' : '—'} |`).join('\n')}
+${MAPS.map((m, i) => `| **${m.name}** | \`${m.id}\` | ${m.en} | ${depthOf(m)} m | Lv${levelCapForMap(i)} | ${mapGateText(i)} | ${m.hook ? '`' + m.hook + '`' : '—'} |`).join('\n')}
 
 > 等级闸门来自 \`MAP_LEVEL_CAP = [${C.MAP_LEVEL_CAP.join(', ')}]\`（第 N 张图的累计上限）。
 > 当前只有前 ${MAPS.length} 张落地，后面的数值是给扩建预留的。
+>
+> ⚠ **「换图门槛」列已不是许可证**（v0.7 第二批取消）：首图是出生地，其余图要
+> **${CHART.name} + 一艘船**（船厂 App 在第 ${BOAT_UNLOCK_CAST} 竿由老赵的电话解锁）。
 
 **地图叙事设定**
 
@@ -302,11 +351,17 @@ function doc03() {
 ${UPGRADE_ORDER.map((k) => {
     const u = UPGRADES[k];
     const curveKey = curveKeysOf(k)[0];
+    // ⚠ v0.5：一次性工具（绞盘）没有等级曲线 —— 它的"数值"那几列留空，
+    //   只在最后一列写清楚是"一次买断"。不特判的话 LEVELS[undefined] 会直接把生成器打挂。
+    if (!curveKey) {
+      return `| **${u.name}** \`${k}\` | ${u.desc} | ${u.tier} | ${u.base} | — | — | — | — | — | — | ${fmt(u.base)}（一次买断） |`;
+    }
     const row = LEVELS[curveKey];
     return `| **${u.name}** \`${k}\` | ${u.desc} | ${u.tier} | ${u.base} | ${row[0]} | ${row[2]} | ${row[4]} | ${row[9]} | ${row[14]} | ${row[20]}${u.unit} | ${fmt(sumCost(k, MAX_LEVEL))} |`;
   }).join('\n')}
 
 > 「满级累计投入」= 从 Lv0 一路买到 Lv${MAX_LEVEL} 的总金币（\`Σ cost(0..${MAX_LEVEL - 1})\`）。
+> 一次性工具（\`oneShot\`）没有等级，买一次即满级，所以它的"累计投入"就是售价。
 
 ## 2. 成本公式
 
@@ -332,6 +387,17 @@ ${MAPS.map((m, i) => `| ${m.name} | Lv${levelCapForMap(i)} |`).join('\n')}
   for (const k of UPGRADE_ORDER) {
     const u = UPGRADES[k];
     const keys = curveKeysOf(k);
+    // ⚠ v0.5：一次性工具没有 21 级曲线，硬套"完整 21 级曲线与逐级成本"会出一张
+    //   只有一行"等级"的空表（而且累计投入是 Infinity）。单独写一小节。
+    if (!keys.length) {
+      parts.push(`
+### ${u.name} \`${k}\` —— ${u.desc}（${u.tier}）
+
+**一次性买断**：售价 ${fmt(u.base)} 金币，买下即永久拥有，没有等级、也没有后续成本。
+效果：${u.key === 'winch' ? '上升阶段 HUD 上多一个「快速回收」按钮（本竿剩下的上升段全速收线）' : '（见 config.js）'}
+`);
+      continue;
+    }
     const lvRow = Array.from({ length: MAX_LEVEL + 1 }, (_, i) => i);
     const rows = [['等级', ...lvRow.map(String)]];
     for (const ck of keys) rows.push([`${ck}${u.unit}`, ...LEVELS[ck].map(String)]);
@@ -349,7 +415,7 @@ ${table(rows)}`);
 \`LEVELS\` 的**索引 0~4 冻结**成 v0.2 现值，不许改：
 
 - ${DEFAULT_MAP.name}的 5 个海域边界（${ZONES.filter((z) => z.map === DEFAULT_MAP.id).map((z) => -z.bottom).join(' / ')}）就是照着 \`maxDepth[0..4]\` 调的；
-- \`verify3\` 的 \`T8~T11\` 直接断言 Lv4 的数值（${['maxDepth', 'hookRadius', 'descendSpeed', 'lampRadius'].map((x) => LEVELS[x][4]).join(' / ')}）；
+- \`verify3\` 的 \`T8~T11\` 直接断言 Lv4 的数值（${['maxDepth', 'hookRadius', 'dropDepth', 'lampRadius'].map((x) => LEVELS[x][4]).join(' / ')}）；
 - \`verify7\` 的 \`A3\` 逐位核对这一组（改了就挂）。
 
 要扩等级只改 Lv5 以后的斜率。
@@ -366,15 +432,14 @@ function curveKeysOf(key) {
   switch (key) {
     case 'line': return ['maxDepth'];
     case 'hook': return ['hookRadius'];
-    case 'sinker': return ['descendSpeed'];
-    case 'power': return ['gunPower'];
+    // ⚠ v0.5：铅坠的曲线从 descendSpeed（下潜速度）换成 dropDepth（直达深度上限）
+    case 'sinker': return ['dropDepth'];
     case 'lamp': return ['lampRadius', 'lampPower'];
-    case 'winch': return ['ascendSpeed'];
     case 'creel': return ['creelLimit'];
-    case 'insurance': return ['insurance'];
-    case 'sonar': return ['sonar'];
     case 'bait': return ['bait'];
-    case 'rig': return ['rig'];
+    // 一次性工具没有等级曲线 —— 返回空数组，调用方（速览表 / 逐级表）要跳过它。
+    // ⚠ v0.5 删掉了 power / winch / insurance / sonar / rig 五条映射。
+    case 'winch': return [];
     default: throw new Error('未知升级项: ' + key);
   }
 }
@@ -392,25 +457,44 @@ function doc04() {
   }));
 
   // ── 下潜 / 上升 ──
+  // ⚠ v0.5：下潜 / 收线速度**不再是升级轴**，改成两个常量（TUNING.DESCEND_SPEED /
+  //   ASCEND_SPEED）。铅坠改给"可直接跳过的最大深度"，绞盘改成一次性工具（快速回收按钮）。
   parts.push(`## 1. 下潜与上升
 
 | 项 | 取值方式 | Lv0 | Lv4 | Lv20 |
 |---|---|---:|---:|---:|
-| 下潜速度 | \`descendSpeed\`（铅坠） | ${LEVELS.descendSpeed[0]} | ${LEVELS.descendSpeed[4]} | ${LEVELS.descendSpeed[20]} m/s |
-| 收线速度 | \`ascendSpeed\`（绞盘） | ${LEVELS.ascendSpeed[0]} | ${LEVELS.ascendSpeed[4]} | ${LEVELS.ascendSpeed[20]} m/s |
+| 下潜速度 | \`TUNING.DESCEND_SPEED\`（**常量，不随等级变**） | ${T.DESCEND_SPEED} | ${T.DESCEND_SPEED} | ${T.DESCEND_SPEED} m/s |
+| 收线速度 | \`TUNING.ASCEND_SPEED\`（**常量**；快速回收时 ×${T.FAST_REEL_MUL}） | ${T.ASCEND_SPEED} | ${T.ASCEND_SPEED} | ${T.ASCEND_SPEED} m/s |
 | 最大下潜深度 | \`maxDepth\`（鱼线） | ${LEVELS.maxDepth[0]} | ${LEVELS.maxDepth[4]} | ${LEVELS.maxDepth[20]} m |
+| 直达深度上限 | \`dropDepth\`（铅坠） | ${LEVELS.dropDepth[0]} | ${LEVELS.dropDepth[4]} | ${LEVELS.dropDepth[20]} m |
+
+**铅坠 · 直达深度**
+
+开竿落水后，钩子**直接出现在玩家指定的深度**，省掉从水面沉下去的那一段。
+上限取三者之小：铅坠等级、鱼线极限、以及 **鱼线极限 × ${T.DROP_MAX_RATIO}**。
+
+| 参数 | 值 | 含义 |
+|---|---:|---|
+| \`DROP_MAX_RATIO\` | ${T.DROP_MAX_RATIO} | 最多跳过鱼线极限的这个比例 —— **保证每竿至少还要自己下潜 ${Math.round((1 - T.DROP_MAX_RATIO) * 100)}%**，下潜躲鱼这一段永远存在 |
+| \`DROP_MIN_DEPTH\` | ${T.DROP_MIN_DEPTH} | 落点离水面至少留这么远（不然一入水就落在空白段里） |
+| \`DROP_GRACE\` | ${T.DROP_GRACE} | 落地缓冲：跳下去之后这么久内**不判下潜撞鱼**（玩家是盲选深度的，一落地就撞鱼属于运气） |
+
+**绞盘 · 快速回收**（一次性工具）
+
+上升阶段 HUD 上多一个「快速回收」按钮，按一下把收线速度乘 \`FAST_REEL_MUL\`（${T.FAST_REEL_MUL}）直到出水。
+它是**玩家主动触发**的，不是自动的 —— 上升阶段串鱼是主要收入来源，无脑加速会让玩家跳过鱼群。
 
 **鱼钩判定**
 
 | 判定 | 公式 | 值 |
 |---|---|---:|
 | 上升捕获半径 | \`hookRadius\`（鱼钩） | ${LEVELS.hookRadius[0]} → ${LEVELS.hookRadius[4]} → ${LEVELS.hookRadius[20]} |
-| 下潜撞鱼半径（基准） | \`TUNING.bumpRadius\` | ${T.bumpRadius}（**固定，不随等级变**） |
-| 下潜撞鱼半径（加固后） | \`bumpRadiusAt(lv) = ${T.bumpRadius} × (1 − rig/100)\` | 满级 ${(T.bumpRadius * (1 - LEVELS.rig[20] / 100)).toFixed(2)} |
+| 下潜撞鱼半径 | \`TUNING.bumpRadius\` | ${T.bumpRadius}（**固定常量**） |
 
 > **为什么下潜判定必须固定？** 下潜时鱼是障碍物，判定半径越大越容易被逼收线。
 > 若让它跟着鱼钩等级涨，升级鱼钩反而让下潜寸步难行 —— 等于花钱买罪受。
-> 想让下潜更从容 → 单独买「加固」。
+> ⚠ v0.5：「加固」升级项已删除，所以**没有**"花钱把判定缩小"的出口了 ——
+> 下潜的难度完全由走位决定（这是刻意的，见 config.js 的 bumpRadius 注释）。
 
 **收线上拉预备**（撞鱼 / 触底之后先缓动再反转）
 
@@ -522,9 +606,11 @@ ${[0, 4, 20].map((lv) => {
 
 | 参数 | 值 |
 |---|---:|
-| \`pufferPenalty\` | ${T.pufferPenalty} 金币 |
-| \`pufferPenaltyAt(lv) = round(${T.pufferPenalty} × (1 − insurance/100))\` | 满级 ${Math.round(T.pufferPenalty * (1 - LEVELS.insurance[20] / 100))} 金币 |
+| \`pufferPenalty\` | ${T.pufferPenalty} 金币（**固定值**） |
 | 命中后果 | 罚款 + combo 归零 + 屏幕爆闪 |
+
+> ⚠ v0.5：「保险」升级项已删除，罚款**没有减免路径** —— 撞上就是全价。
+> 这是刻意的：扣钱鱼是纯风险，不该能用金币把它变成"几乎无感"。
 
 **扣钱鱼出现频率**
 
@@ -565,7 +651,7 @@ ${MAPS.map((m) => `### ${m.name} ${m.en}
 > ${m.desc}
 
 - 深度上限：${depthOf(m)} m
-- 进入门槛：${m.license ? `许可证 ${fmt(m.license)} 金币` : '初始地图，免费'}
+- 进入门槛：${mapGateText(MAPS.indexOf(m))}
 - 机制钩子：${m.hook ? `\`${m.hook}\`` : '无'}
 - 海域：${ZONES.filter((z) => z.map === m.id).map((z) => z.nick).join(' → ')}`).join('\n\n')}
 
@@ -596,17 +682,35 @@ ${ZONES.map((z) => `| ${MAP_NAME.get(z.map)} | ${z.name} | **${z.nick}** | ${z.t
   }
 
   parts.push(`
-## 5. 目前没有的东西（写剧情前先看）
+## 5. 电话引导文本（v0.6）
+
+游戏里**唯一成段的对话**。渔具店老板「老王」和枪店老板「阿海」会在玩家刚好需要知道某件事的时候
+打电话过来 —— 全部 6 通，按**触发顺序**列出。
+
+| # | 来电人 | 触发条件 | 听完跳到 |
+|---:|---|---|---|
+${CALLS.map((c, i) => `| ${i + 1} | ${c.who} | \`${callWhenText(c.when)}\` | ${c.goto ? `\`${c.goto}\`（${c.gotoText.replace(/\\s/g, '')}）` : '不跳'} |`).join('\n')}
+
+${CALLS.map((c, i) => `### ${i + 1}. ${c.who} \`${c.id}\`
+
+${c.lines.map((l) => `> ${l}`).join('\n>\n')}
+`).join('\n')}
+
+> ⚠ 电话**只在待机时响、每通只响一次、两通之间至少隔 ${CALL_GAP} 竿**。
+> 这三条是它和"弹窗式引导"的根本区别 —— 弹窗会重复、会打断，电话不会。
+> 文案与触发条件都写在 \`config.js\` 的 \`CALLS\` 里，改完跑 \`gen-docs.mjs\`。
+
+## 6. 目前没有的东西（写剧情前先看）
 
 | 项 | 现状 |
 |---|---|
 | 主线剧情 | ❌ 没有。游戏是一个纯循环：抛竿 → 下潜 → 上升 → 空中 → 结算 |
-| NPC / 对话 | ❌ 没有 |
+| NPC / 对话 | ⚠ **只有电话**（v0.6 加了 6 通引导电话）。没有会走动的 NPC、没有可选的对话树 |
 | 任务 / 目标 | ❌ 没有。只有长期的"升级 + 换地图"进度 |
 | 结局 | ❌ 没有。第二张图的 Boss「极夜之王」是目前的内容顶点 |
 
 计划的扩建方向（弱剧情、5 张地图、92 种鱼）见 [\`../EXPANSION.md\`](../EXPANSION.md)。
-**如果要做剧情，新增文本建议放回 \`config.js\` 的 \`desc\` 字段或另开 \`src/story.js\`，
+**如果要做剧情，新增文本建议放回 \`config.js\` 的 \`desc\` / \`CALLS[].lines\` 字段或另开 \`src/story.js\`，
 再由本脚本生成到这里** —— 不要在本文里手写，否则又会变成一份会漂移的副本。
 `);
 
@@ -641,9 +745,11 @@ function doc06() {
 |---|---|---|---:|---|
 ${mechRows.join('\n')}
 
-> 「攻击力」升级（渔具店）是**所有枪共用的伤害倍率**，见 \`LEVELS.gunPower\`：
-> Lv0 = ×${LEVELS.gunPower[0].toFixed(2)} → Lv${MAX_LEVEL} = ×${LEVELS.gunPower[MAX_LEVEL].toFixed(2)}。
-> 它**只乘伤害，不乘半径** —— 半径是每把枪的身份，全局放大会把七把枪的差别抹平。
+> ⚠ **v0.5：攻击力不再是独立的升级项。** 它并进了每把枪自己的 \`dmg\` 曲线 ——
+> 每把枪的伤害都乘了一条 \`1 + 2.8·i/5\` 的斜坡（Lv0 不变、Lv5 ×3.8），
+> 所以"把枪升满"的终局强度和删掉攻击力之前完全一致。
+> **想调攻击力就调 \`GUNS[].dmg\`，不要再去别处找全局系数。**
+> 斜坡**只乘伤害，不乘半径** —— 半径是每把枪的身份，全局放大会把七把枪的差别抹平。
 
 ## 2. 数值曲线（每把枪 6 档）
 `);
@@ -719,7 +825,20 @@ ${hpRows.join('\n')}
 > 深层同一层里同时有"软鱼"和"硬骨头"（例如极光长廊 9 ~ 34，差 3.8 倍）。
 > 全是硬鱼 → 手感发钝；全是软鱼 → 枪械等级失去意义。
 
-## 5. 维护约定
+## 5. 分段解锁（v0.7 第三批）
+
+**枪不是开局全有的**。每把枪两个可选字段决定它什么时候上架（判定在 \`game.js\` 的 \`gunUnlocked()\`）：
+
+| 字段 | 语义 | 谁满足 |
+|---|---|---|
+| \`unlockMap\` | 「**到过**这张图」才上架（= \`mapProgress().owned\`，与渔具店分段解锁同源） | 散弹枪及之后全部 = \`'polar'\` |
+| \`unlockDepth\` | 在那张图**潜到过这个深度**才上架（读 \`mapBest\`） | Uzi −140 / 加特林 −340 / 鱼叉 −600 / 激光 −920 / 巴雷特 −1100 |
+
+> ⚠ **已拥有的枪永远视为已解锁**（老存档兜底）。
+> ⚠ 新枪上架会走"新货播报"（iOS 式推送卡 + 手机红点 + 枪店 App 红点 + 「NEW」角标），
+>   判定只在 \`game.js\` 的 \`_syncGunNews()\` 一处，界面只负责播。
+
+## 6. 维护约定
 
 - **数值只有 \`src/config.js\` 的 \`GUNS\` 一处**，本文由 \`.dev/gen-docs.mjs\` 生成，不要手改。
 - **加第 8 把枪**：往 \`GUNS\` 追加一项即可 —— \`GUN_ORDER\`、存档字段、枪店列表、

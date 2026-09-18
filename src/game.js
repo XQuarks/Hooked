@@ -19,9 +19,11 @@ import * as THREE from 'three';
 import {
   WORLD, CAMERA, ZONES, SPECIES, TUNING, FISH_DENSITY, HAZARD_SPAWN, SCHOOL, ICEBERG,
   SPAWN_TOP_MARGIN, MODEL_SCALE,
-  UPGRADES, UPGRADE_ORDER, MAX_LEVEL, levelCapForMap, upgradeCost, SAVE_KEY, altitudeAt,
+  UPGRADES, UPGRADE_ORDER, MAX_LEVEL, maxLvOf, levelCapForMap, upgradeCost, SAVE_KEY, altitudeAt,
   DEFAULT_MAP, MAPS, mapById, mapMaxDepth, zoneAtDepth, zonesOfMap,
   GUNS, GUN_ORDER, GUN_MAX_LEVEL, gunById, gunStats, gunUpgradeCost,
+  CALLS, CALL_GAP,
+  BOATS, BOAT_ORDER, boatById, CHART, CHEST, SEABED,
 } from './config.js';
 import { World, clamp, lerp } from './world.js';
 import { FishManager, FISH_STATE } from './fish.js';
@@ -36,11 +38,40 @@ const STATE = {
 };
 
 /**
- * 声呐刻度上"值得为它再往下放一段"的身价门槛（金色刻度）。
- * 和 _catch() 里飘字用金色高亮的门槛是同一个数 —— 两处不一致的话，
- * 玩家会看到声呐标金、勾上来却不是金色，那种不一致比没有高亮更糟。
+ * 铅坠·直达深度：本竿最多能把钩子直接放到多深（正数米数）。
+ *
+ * 两个上限取小：
+ *   ① 铅坠等级给的上限（`LEVELS.dropDepth`，Lv0 = 80 → Lv20 = 1540）
+ *   ② **鱼线极限 × DROP_MAX_RATIO（70%）**
+ *
+ * ② 是这套机制能存在的**前提**：不加它，铅坠升满之后"跳到底"就等于把整个下潜阶段删掉，
+ * 而"下潜躲鱼"是这个游戏三段循环里的第一段（见 GAMEPLAY.md 支柱 P1）。
+ * 它同时也是唯一挡住"在深图把铅坠升满、然后回浅图跳到底"的那道闸 ——
+ * 传入的 `maxDepth` 已经在 `applyUpgrades()` 里按**当前地图**封顶过了。
+ *
+ * ⚠ 调用点在 `applyUpgrades()` 而不是开竿时：换图 / 买鱼线之后它必须立刻跟着变，
+ *   否则玩家会看到"选了 500m，换到浅图之后还能跳 500m"。
  */
-const SONAR_HOT_VALUE = 120;
+function dropDepthCap(save, map, maxDepth) {
+  const byLevel = TUNING.dropDepth(save.levels.sinker);
+  const byLine = Math.max(0, maxDepth) * TUNING.DROP_MAX_RATIO;
+  return Math.max(0, Math.min(byLevel, byLine));
+}
+
+/**
+ * 本竿实际要跳到的深度（正数米数，0 = 不跳）。
+ *
+ * 只有"开关打开 + 玩家选的目标深度有效"才跳。目标深度被钳进
+ * `[DROP_MIN_DEPTH, cap]` —— 上限来自 `dropDepthCap()`，
+ * 下限保证钩子不会停在贴着水面的那一段空白里（见 config 的 DROP_MIN_DEPTH）。
+ */
+function resolveDropDepth(save, cap) {
+  const d = save.drop;
+  if (!d || !d.on) return 0;
+  if (!(cap > 0)) return 0;
+  const want = Number(d.depth) || 0;
+  return clamp(want, TUNING.DROP_MIN_DEPTH, cap);
+}
 
 // ─────────────────────────────────────────────────────────────
 // 存档
@@ -70,6 +101,35 @@ const freshSave = () => ({
   //   走 lvAt() 取绝对值曲线；枪械等级是"这把枪自己的档位"，取值走 gunStats()。
   //   两张表混在一起，加一把枪就会让 `lvAt` 的越界钳制把枪械等级当成升级等级。
   guns: { owned: [], current: GUN_ORDER[0], levels: Object.fromEntries(GUN_ORDER.map((id) => [id, 0])) },
+  // ── 铅坠·直达深度（v0.5）──
+  //   on    这一竿开竿时要不要跳过一段下潜
+  //   depth 玩家指定的目标深度（正数米，实际会被钳到 [DROP_MIN_DEPTH, dropDepthCap]）
+  //
+  // ⚠ 这是**玩家偏好**而不是装备等级，所以不放进 `levels`：
+  //   `levels` 的每一项都对应一条 LEVELS 曲线，而这两个是"开关 + 一个数"。
+  //   混进去的话 lvAt() 会把它们当成曲线名去查表，直接抛错。
+  drop: { on: false, depth: 0 },
+  // ── 来电引导（v0.6）──
+  //   calls        已听过的电话 id（听完就不再响）
+  //   lastCallCast 上一通电话发生在第几竿 —— 用来实现"两通之间至少隔 CALL_GAP 竿"
+  calls: [],
+  lastCallCast: -999,
+  // ── 海图 / 船只（v0.7）──
+  //   chart    是否已经钓到极地海图（首图海沟底部的宝箱里）
+  //   boatApp  船厂 App 是否已解锁（第 10 竿的电话 或 钓到海图时解锁）
+  //   boats    { owned: 已买下的船 id[], current: 当前用的那艘 }
+  //
+  // ⚠ 换图门槛 = `chart` + `boats.owned.length > 0`（见 mapProgress）。
+  //   许可证机制保留在 MAPS 里（将来加图可能还要），但当前两张图都是 0。
+  chart: false,
+  boatApp: false,
+  boats: { owned: [], current: null },
+  // 未读"新枪上架"（v0.7 第三批）：枪店分段解锁之后，一把枪从"锁着"变"可见"时记进来，
+  // 玩家**点开枪店**才清空 —— 手机红点 / 枪店 App 红点 / 推送横幅读它。
+  gunNews: [],
+  // 播报**过**的新枪（不清空）：驱动店里那枚「NEW」角标，
+  // 一直挂到那把枪被买下为止（owned 之后 isNew 自然为 false）。
+  gunAnnounced: [],
 });
 
 function loadSave() {
@@ -84,7 +144,10 @@ function loadSave() {
       s.totalEarned = Number(raw.totalEarned) || 0;
       s.muted = !!raw.muted;
       for (const k of UPGRADE_ORDER) {
-        s.levels[k] = clamp(Math.round(Number(raw.levels?.[k]) || 0), 0, MAX_LEVEL);
+        // ⚠ 钳到**该项自己的上限**（maxLvOf）而不是 MAX_LEVEL：
+        //   一次性工具（绞盘）的上限是 1，用 MAX_LEVEL 会让手改存档把它写成 20，
+        //   于是商店显示一个"已拥有但 Lv.20"的错位状态。
+        s.levels[k] = clamp(Math.round(Number(raw.levels?.[k]) || 0), 0, maxLvOf(k));
       }
       if (raw.codex && typeof raw.codex === 'object') {
         for (const [id, v] of Object.entries(raw.codex)) {
@@ -135,6 +198,56 @@ function loadSave() {
       // 不兜这一下的话，玩家会拿着一把"没拥有却能开火"的枪，枪店里还看不到它。
       if (s.guns.current !== GUN_ORDER[0] && !s.guns.owned.includes(s.guns.current)) {
         s.guns.current = GUN_ORDER[0];
+      }
+      // （未读新枪的迁移挪到了下面 chart / boats 兜底之后 —— 它要先知道"到过哪张图"）
+      // ── 铅坠·直达深度：逐字段兜底（老存档整个 drop 字段都不存在）──
+      const rd = raw.drop;
+      if (rd && typeof rd === 'object') {
+        s.drop.on = !!rd.on;
+        s.drop.depth = Math.max(0, Math.round(Number(rd.depth) || 0));
+      }
+      // ── 来电引导：同样逐字段兜底，并且**只保留现在还存在的电话 id** ──
+      // （删过一通电话 / 改过 id 的存档不会留下幽灵条目）
+      if (Array.isArray(raw.calls)) {
+        s.calls = raw.calls.filter((x) => typeof x === 'string' && CALLS.some((c) => c.id === x));
+      }
+      const lcc = Number(raw.lastCallCast);
+      if (Number.isFinite(lcc)) s.lastCallCast = Math.round(lcc);
+      // ── 海图 / 船只（v0.7）：逐字段兜底，并且**只保留现在还存在的船 id** ──
+      s.chart = !!raw.chart;
+      s.boatApp = !!raw.boatApp;
+      const rb = raw.boats;
+      if (rb && typeof rb === 'object') {
+        const owned = (Array.isArray(rb.owned) ? rb.owned : [])
+          .filter((id) => typeof id === 'string' && boatById(id));
+        s.boats.owned = [...new Set(owned)];
+        s.boats.current = s.boats.owned.includes(rb.current) ? rb.current : (s.boats.owned[0] || null);
+      }
+      // ⚠ 兜底：有船却没解锁船厂（手改存档 / 将来删过 App）→ 补上解锁。
+      //   不补的话桌面看不到船厂，玩家拥有一艘**买不到也换不了**的船。
+      if (s.boats.owned.length) s.boatApp = true;
+      // ⚠ 海图也不许"丢"：如果存档里船都买了却没有海图（不可能由正常流程产生），
+      //   补上海图，免得玩家卡在"有船但进不去极地"的死状态里。
+      if (s.boats.owned.length && !s.chart) s.chart = true;
+      // ── 未读新枪（v0.7 第三批）：只保留现在还存在的枪 id ──
+      // ⚠⚠ **老存档升级要把"当前已解锁"的枪全部标成"播报过"** ——
+      //   不然这次更新一上线，所有老玩家会同时收到五六条"新货上架"，
+      //   一个本来是好消息的功能第一次露面就成了骚扰。只有 fresh install
+      //   （连存档都没有）才从空白开始。
+      if (Array.isArray(raw.gunNews)) {
+        s.gunNews = raw.gunNews.filter((x) => typeof x === 'string' && GUNS.some((g) => g.id === x));
+      }
+      if (Array.isArray(raw.gunAnnounced)) {
+        s.gunAnnounced = raw.gunAnnounced.filter((x) => typeof x === 'string' && GUNS.some((g) => g.id === x));
+      } else {
+        const hasBoat = s.boats.owned.length > 0;
+        const reached = (id) => id === MAPS[0].id || (s.chart && hasBoat);
+        for (const g of GUNS) {
+          if (g.price <= 0) continue;
+          if (g.unlockMap && !reached(g.unlockMap)) continue;
+          if (g.unlockDepth != null && (s.mapBest[g.unlockMap] || 0) < g.unlockDepth) continue;
+          s.gunAnnounced.push(g.id);
+        }
       }
     }
   } catch (_) { /* 存档损坏则用默认值 */ }
@@ -204,6 +317,11 @@ class Game {
     this.fish = new FishManager(this.world.scene);
     this.hook = new Hook(this.world.scene, this.world.rodTip);
     this.ui = new UI();
+    // 新货推送被点 → 打开枪店（红点在那一步消失）。"开哪个 App"的判断留在 game 层，
+    // UI 只负责"我被点了" —— 否则这个判断又会散到界面里去。
+    this.ui.onNewsTap = () => {
+      if (this.state === STATE.IDLE && !this.phoneOpen) this.openPhone('gunshop');
+    };
     this.ui.setMap(this.map);
     this.input = new Input(this.canvas);
 
@@ -226,15 +344,18 @@ class Game {
     this.airFish = [];
     this.caught = [];
     this.maxDepth = TUNING.maxDepth(this.save.levels.line);
-    this.descendSpeed = TUNING.descendSpeed(this.save.levels.sinker);
-    // 下面 4 项由 applyUpgrades() 统一赋值，这里先给个初值免得 applyUpgrades 之前被读到
-    this.ascendSpeed = TUNING.ascendSpeed(this.save.levels.winch);
+    // ⚠ v0.5：下潜 / 收线速度、撞鱼判定、罚款都变成**常量**（它们原来的升级轴已移除）。
+    //   仍然写成实例字段而不是直接用 TUNING.xxx —— 热路径上每帧读一次字段比读两层对象快，
+    //   而且调试时 `g.descendSpeed` 一眼能看见。
+    this.descendSpeed = TUNING.DESCEND_SPEED;
+    // 下面几项由 applyUpgrades() 统一赋值，这里先给个初值免得 applyUpgrades 之前被读到
+    this.ascendSpeed = TUNING.ASCEND_SPEED;   // 基准收线速度；快速回收时临时乘 FAST_REEL_MUL
     this.creelLimit = TUNING.creelLimit(this.save.levels.creel);
-    this.bumpRadius = TUNING.bumpRadiusAt(this.save.levels.rig);
-    this.pufferPenalty = TUNING.pufferPenaltyAt(this.save.levels.insurance);
-    this.sonarPct = TUNING.sonar(this.save.levels.sonar);
+    this.bumpRadius = TUNING.bumpRadius;
+    this.pufferPenalty = TUNING.pufferPenalty;
     this.baitBonus = TUNING.bait(this.save.levels.bait);
-    this._sonarT = 0;                      // 声呐刻度的刷新节流（不用每帧重建 DOM）
+    // 铅坠·直达深度：本竿开竿时把钩子直接放到多深（0 = 不跳，正常从水面沉下去）
+    this.dropDepth = 0;
     // 浮冰减速剩余时间（冰封极地）。> 0 时下潜速度乘 ICEBERG.slowScale ——
     // 撞浮冰的代价是"这一段变慢"，不是"这一竿结束"（和撞鱼区分开）。
     this.iceSlowT = 0;
@@ -279,8 +400,9 @@ class Game {
   /**
    * 把存档里的等级同步到实际手感参数上（买完东西、读档后都要调）。
    *
-   * 11 项升级在这里一次性落到 game 实例上，**不要在下潜/上升的循环里现查 LEVELS** ——
-   * 那样每帧要读 11 次表，而且"哪一项在哪生效"会散得满代码都是。
+   * 所有会随升级变化的量在这里**一次性**落到 game 实例上，
+   * **不要在下潜/上升的循环里现查 LEVELS** —— 那样每帧要读好几次表，
+   * 而且"哪一项在哪生效"会散得满代码都是。
    */
   applyUpgrades() {
     const L = this.save.levels;
@@ -293,20 +415,33 @@ class Game {
     //   商店的等级闸门（levelCapForMap）只挡"在这张图能升到几级"，
     //   挡不住"带着在别处升的长线跨图过来"。所以这里必须再钳一次。
     this.maxDepth = Math.min(TUNING.maxDepth(L.line), mapMaxDepth(this.map));
-    this.descendSpeed = TUNING.descendSpeed(L.sinker);
-    this.ascendSpeed = TUNING.ascendSpeed(L.winch);          // 绞盘
     this.creelLimit = TUNING.creelLimit(L.creel);            // 鱼护
-    this.bumpRadius = TUNING.bumpRadiusAt(L.rig);            // 加固
-    this.pufferPenalty = TUNING.pufferPenaltyAt(L.insurance); // 保险
     this.baitBonus = TUNING.bait(L.bait);                    // 鱼饵（spawnFish 抽签时用）
-    this.sonarPct = TUNING.sonar(L.sonar);                   // 声呐（0~1，深度尺上画探测带）
-    // 攻击力：**所有枪械共用的伤害倍率**。v0.4 起它不再直接给"伤害/半径的绝对值" ——
-    // 半径是每把枪的身份（手枪 24 / 散弹 30 / 巴雷特 60），全局放大会把它们的差别抹平。
-    this.gunMul = TUNING.gunPower(L.power);
+    // ── 船只效果（v0.7）──────────────────────────────────────
+    // 三艘船各带一个效果，**只取当前那艘**（不是把已拥有的船叠起来）——
+    // 叠加的话"把三艘都买了"就成了唯一正解，而这套设计的意图是
+    // **三选一：挑你喜欢的玩法**（多卖钱 / 装得多 / 护钩子）。
+    // ⚠ 换船是免费的（已拥有的船随便换），所以这不是"永久绑定"，可以随便试。
+    {
+      const boat = boatById(this._boats().current);
+      const eff = boat ? boat.effect : null;
+      this.boatGoldMul = eff && eff.kind === 'gold' ? eff.mul : 1;
+      if (eff && eff.kind === 'creel') this.creelLimit += eff.add;
+      this.hookGuardMax = eff && eff.kind === 'guard' ? eff.count : 0;
+      // 外观：把**船的数据**交给世界层（世界层不认识 config，见 world.setBoatSkin 注释）
+      this.world.setBoatSkin(boat);
+    }
+    // 宝箱：拿到海图之后就收起来（它是一次性的剧情道具）
+    this.world.showChest(!this.save.chart);
+    // 铅坠·直达深度：等级给的是"最多能跳多深"，实际还要和鱼线极限、70% 上限取小。
+    // 这个钳制放在这里（而不是开竿时现算）—— 换图 / 买鱼线之后它必须立刻跟着变。
+    this.dropMax = dropDepthCap(this.save, this.map, this.maxDepth);
     this.hook.setRadius(TUNING.hookRadius(L.hook));
     this.world.setLamp(L.lamp);
     this.ui.setLineLimit(this.maxDepth);
-    this.ui.setSonar(this.sonarPct);                         // 声呐
+    // ⚠ 三个参数都要给全：漏了 `min` 的话界面会把下限当成 0，
+    //   于是"直达 · 关"时显示 `−0m`，而实际落点会被 resolveDropDepth 钳到 20m —— 显示和实际不一致。
+    this.ui.setDropControl(this.save.drop, this.dropMax, TUNING.DROP_MIN_DEPTH);
   }
 
   // ── 一局数据 ─────────────────────────────────────────────
@@ -315,11 +450,29 @@ class Game {
     this.run = {
       caught: 0, lost: 0, shot: 0, earned: 0,
       bestCombo: 0, depth: 0, alt: 0, escaped: [], birds: 0,
+      // 超时收竿时还挂在天上、没打下来的条数（v0.6）。单独记一个数是因为
+      // 「逃走了」那条链是按名字逐条列的，几十条一起列会把结算面板撑爆。
+      timedOut: 0,
     };
     this.combo = 0;
     this.mult = 1;
     this.maxDepthReached = 0;
     this.maxAltReached = 0;
+    // 快速回收（绞盘）：**每竿重置**。买下绞盘不等于永久加速 ——
+    // 它是一个"我现在够了"的决策，见 config 的 FAST_REEL_MUL。
+    this.fastReel = false;
+    // 本竿实际跳到的深度（0 = 没跳）。结算 / 提示用，也让 verify 能直接断言。
+    this.dropUsed = 0;
+    // 直达深度落地后的撞鱼缓冲（见 config 的 DROP_GRACE）
+    this.dropGraceT = 0;
+    // 鱼护满了只提示一次（v0.7，见 _creelFull）—— 每竿重置
+    this._creelFullDone = false;
+    // 船只「装甲号」的护钩次数：**每竿重置**（本竿第一次撞鱼不强制收线，第二次照常）
+    this.hookGuardLeft = this.hookGuardMax || 0;
+    // 宝箱每竿只能被"捡"一次（捡到之后就没了，但这条防的是同一帧重复触发）
+    this._chestTaken = false;
+    // 被「忽略」的那一通电话：抛新的一竿就允许它再响（见 pendingCall）
+    this.ignoredCall = null;
   }
 
   get multOfCombo() {
@@ -361,10 +514,41 @@ class Game {
       if (this.state === STATE.DESCEND) this._reel();
     });
     el.mute.addEventListener('click', (e) => { e.stopPropagation(); this._toggleMute(); });
+    // 快速回收（绞盘）：上升阶段按一下，本竿剩下的上升段全速收线。
+    // ⚠ 必须 stopPropagation + preventDefault：它压在游戏画面上，
+    //   不拦的话这一下会同时被 Input 当成"点屏幕"（上升阶段会去 _steer）。
+    el.fastReelBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.fastReelNow();
+    });
     // 手机入口：渔具店 / 枪店 / 图鉴 / 航线 / 设置 五个 App 都在这台手机里
     el.phoneBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (this.state === STATE.IDLE && !this.phoneOpen) { SFX.tap(); this.openPhone(); }
+    });
+    // 来电卡片（v0.7：iPhone 式）：点**卡片本身** = 接听；两个圆钮分别是忽略 / 接听。
+    // ⚠ 必须 stopPropagation —— 它压在游戏画面上，不拦的话这一下会同时被 Input
+    //   当成"点屏幕"，玩家本来只想接个电话，结果顺手抛了一竿。
+    el.callBanner.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (this.state === STATE.IDLE && !this.phoneOpen && this.ringingCall) this._answerCall();
+    });
+    el.callAccept.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (this.state === STATE.IDLE && !this.phoneOpen && this.ringingCall) this._answerCall();
+    });
+    // 「忽略」= 只是把这张卡收起来，**不记为已听** —— 下一次回待机它还会响。
+    // 这是刻意的：忽略不等于听过，"还没处理的电话"必须还能找回来（见 config 的 CALLS 硬约束②）。
+    el.callDecline.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.ignoredCall = this.ringingCall ? this.ringingCall.id : null;
+      this.ringingCall = null;
+      this.ui.ringPhone(false, null);
+      this.ui.setHint('电话先不接 —— 下一竿回待机它还会响');
     });
   }
 
@@ -380,12 +564,18 @@ class Game {
 
   // ── 手机（商店 / 图鉴 / 设置）─────────────────────────────
   /** 打开手机：世界继续按 IDLE 跑，只是把抛竿输入收起来（手机里没有抛竿入口） */
-  openPhone() {
+  openPhone(app) {
+    // 打开手机那一刻先刷一次红点（可能刚好有新枪 / 有来电）
+    this.syncBadges();
     if (this.state !== STATE.IDLE || this.phoneOpen) return;
     this.phoneOpen = true;
     this.ui.showPhoneBtn(false);
     this.ui.setHint('');
     this.ui.openPhone(this.save, this._phoneHandlers());
+    // 有来电时**直接进来电界面** —— 玩家点手机本来就是为了接电话，
+    // 让他再在桌面上找一次「电话」App 是多余的。
+    if (app) this.ui.openApp(app);
+    else if (this.ringingCall) this.ui.openApp('call');
   }
 
   closePhone() {
@@ -396,6 +586,11 @@ class Game {
       this.ui.showPhoneBtn(true);
       this.ui.setHint('点击屏幕 · 抛竿下潜');
     }
+    // 收起手机之后重新评估要不要响铃（比如刚听完一通，下一通可能已经满足条件了）
+    this._syncCall();
+    // 回到待机 → 把排队的"新枪上架"横幅放出来（v0.7 第三批）
+    this._syncGunNews();
+    this.ui.pumpNews();
   }
 
   /** 手机里各 App 的回调，全部回到 game 这一层执行 */
@@ -403,13 +598,31 @@ class Game {
     return {
       tap: () => SFX.tap(),
       buy: (k) => this._buy(k),
+      // ── 铅坠·直达深度（v0.5）──
+      // 界面只管"我要开/关"和"我要跳到多深"，**钳制一律在 setDropDepth 里做**。
+      setDropOn: (v) => this.setDropEnabled(v),
+      setDropDepth: (v) => this.setDropDepth(v),
+      // ── 来电引导（v0.6）──
+      // 界面只负责"要不要接 / 接完去哪"，**标记已听、写存档、跳 App 都在 game 这一层**。
+      ringingCall: () => this.ringingCall,
+      answerCall: () => this._answerCall(),
+      endCall: (goTo) => this._endCall(goTo),
+      callLog: () => this._calls(),
       mapList: () => MAPS.map((m) => this.mapProgress(m)),
       goMap: (id) => this._goMap(id),
+      // ── 船厂（v0.7）──
+      apps: () => this._apps(),
+      boatList: () => this.boatList(),
+      buyBoat: (id) => this.buyBoat(id),
+      setBoat: (id) => this.setBoat(id),
       // ── 枪店 ──
       // UI 拿到的是一份**已经算好的**列表（拥有 / 装备中 / 等级 / 下一级数值 / 价格），
       // 界面里不做任何判断 —— 否则"按钮亮了却买不了"这类不一致会散在 UI 里，还没人测得到。
       gunList: () => GUNS.map((g) => this.gunEntry(g)),
       buyGun: (id) => this._buyGun(id),
+      // ── 新枪播报（v0.7 第三批）──
+      gunNews: () => this._gunNews(),
+      clearGunNews: () => this._clearGunNews(),
       equipGun: (id) => this._equipGun(id),
       upgradeGun: (id) => this._upgradeGun(id),
       close: () => this.closePhone(),
@@ -477,6 +690,7 @@ class Game {
     this.ui.showHud(true);
     this.ui.showPhoneBtn(true);
     this.ui.showGunBar(false);
+    this.ui.showFastReel(false);
     this.ui.setDepthChip(false);          // 待机时先藏起来
     this.ui.setCombo(0, 1);
     this.ui.showReel(false);
@@ -489,6 +703,128 @@ class Game {
     this.hook.setVisible(true);
     this._parkHook();
     this.spawnFish();
+    this._syncCall();                     // 待机 = "玩家在做决定"的那一屏，电话只在这里响
+    // 待机也是"新货上架"该出现的时刻：深度纪录在一竿结束时落库，
+    // 但推送要等结算面板收掉、回到待机才弹出来（不打架）。
+    this._syncGunNews();
+    this.ui.pumpNews();
+  }
+
+  // ── 来电引导（v0.6）────────────────────────────────────────
+  /**
+   * 已听过的电话 id。
+   *
+   * ⚠ 和 `licenses` 一样，包一层是因为**老存档里这个字段根本不存在** ——
+   *   直接 `this.save.calls.includes(...)` 会抛异常。
+   */
+  _calls() {
+    if (!Array.isArray(this.save.calls)) this.save.calls = [];
+    return this.save.calls;
+  }
+
+  /**
+   * 一条电话的触发条件是否**全部**满足。
+   * 条件字段的含义见 `config.js` 的 `CALLS` 注释。
+   */
+  _callReady(c) {
+    const w = c.when || {};
+    if (w.casts != null && this.save.casts < w.casts) return false;
+    // 深度用**本图**纪录：在浅图刷竿数不该把"你已经下到 390m"这条播报出去
+    if (w.depth != null && this.mapBestOf(this.map.id) < w.depth) return false;
+    if (w.codex != null && Object.keys(this.save.codex).length < w.codex) return false;
+    // ⚠ v0.7 第二批把许可证退役之后，`licenses` 永远是空数组（buyMap 只在 license>0 时写它）
+    //   —— 这里还读它的话，两通带 `when.map` 的电话就**永远不响**（GAMEPLAY §6.2 B10）。
+    //   语义改成与分段解锁同源："已到过那张图" = `mapProgress().owned`。
+    if (w.map != null && !this.mapProgress(mapById(w.map)).owned) return false;
+    // ── v0.7：海图 / 船 / App 解锁态（三个都能正反两向用）──
+    if (w.chart != null && !!this.save.chart !== !!w.chart) return false;
+    if (w.boat != null && (this._boats().owned.length > 0) !== !!w.boat) return false;
+    if (w.appLocked != null && this._apps().includes(w.appLocked)) return false;
+    if (w.level) {
+      for (const [k, n] of Object.entries(w.level)) {
+        if ((this.save.levels[k] || 0) < n) return false;
+      }
+    }
+    return true;
+  }
+
+  /** 已解锁的 App id 列表（船厂是 v0.7 起唯一"要解锁"的 App） */
+  _apps() {
+    const base = ['call', 'shop', 'gunshop', 'codex', 'route', 'settings'];
+    return this.save.boatApp ? [...base, 'boat'] : base;
+  }
+
+  /** 船只存档的读写入口（表可能不存在 —— 和 licenses / calls 同一个理由） */
+  _boats() {
+    if (!this.save.boats || typeof this.save.boats !== 'object') this.save.boats = { owned: [], current: null };
+    if (!Array.isArray(this.save.boats.owned)) this.save.boats.owned = [];
+    return this.save.boats;
+  }
+
+  /**
+   * 现在该响哪一通电话（没听过的里，**数组顺序最靠前**且条件满足的那一条）。null = 不响。
+   *
+   * 三条门：① 没听过；② 条件满足；③ 距上一通至少 `CALL_GAP` 竿。
+   * 第 ③ 条是关键 —— 玩家可能在第 5 竿就连着满足三个条件，
+   * 不隔开的话会一次待机收到三通电话，直接变成骚扰。
+   */
+  pendingCall() {
+    const done = this._calls();
+    const last = Number(this.save.lastCallCast);
+    if (Number.isFinite(last) && this.save.casts < last + CALL_GAP) return null;
+    for (const c of CALLS) {
+      if (done.includes(c.id)) continue;
+      // 玩家按过「忽略」的那一通：**这一竿之内不再响**，抛下一竿时重新响
+      // （`ignoredCall` 在 _resetRun 里清空）—— 忽略 ≠ 听过。
+      if (c.id === this.ignoredCall) continue;
+      if (this._callReady(c)) return c;
+    }
+    return null;
+  }
+
+  /**
+   * 把"现在该不该响铃"同步给界面。
+   *
+   * ⚠ **只在待机、且手机没打开时响。** 这是这套系统的第一条硬约束：
+   *   一竿中间插电话会把三段式循环切断，而待机本来就是玩家做决定的那一屏。
+   * ⚠ 响铃**不阻塞任何操作** —— 玩家想无视就无视，照样能点画面抛竿；
+   *   下一次回待机它还会响（因为还没听）。
+   */
+  _syncCall() {
+    const c = (this.state === STATE.IDLE && !this.phoneOpen) ? this.pendingCall() : null;
+    this.ringingCall = c;
+    this.ui.ringPhone(!!c, c);
+  }
+
+  /** 接听：打开手机并直接进入来电界面 */
+  _answerCall() {
+    if (!this.ringingCall) return;
+    SFX.tap();
+    this.openPhone('call');
+  }
+
+  /**
+   * 挂断 / 听完。**标记为已听**（不会再响），并按需跳到目标 App。
+   *
+   * `goto` 是"引导"和"告知"的分界线：只说一句"去枪店看看"然后让玩家自己找，
+   * 多数人不会去；接听完直接把他送到那个 App 前面，才算真的引导。
+   */
+  _endCall(goTo) {
+    const c = this.ringingCall;
+    if (!c) return;
+    this._calls().push(c.id);
+    this.save.lastCallCast = this.save.casts;
+    // ── v0.7：听完这通电话要解锁的 App（船厂）──
+    // ⚠ 解锁必须发生在**接听之后**：解锁早了，桌面上会出现一个从没被介绍过的 App，
+    //   而"这通电话就是介绍"正是它的意义（见 config 的 CALLS 注释）。
+    if (c.unlock === 'boat' && !this.save.boatApp) this.save.boatApp = true;
+    persist(this.save);
+    this.ringingCall = null;
+    this.ui.ringPhone(false, null);
+    SFX.buy();
+    const dest = goTo ? c.goto : null;
+    if (dest) this.ui.openApp(dest);
+    else this.ui.showPhoneHome();
   }
 
   // ── 地图 ────────────────────────────────────────────────────
@@ -531,52 +867,184 @@ class Game {
     return this.save.licenses;
   }
 
+  // ── 新枪上架播报（v0.7 第三批）─────────────────────────────
   /**
-   * 某张地图的换图进度 —— 三个条件一次算清，界面和逻辑共用同一个来源。
+   * 检测"有哪些枪刚刚从锁着变可见"，把它们记进 `save.gunNews` 并推给 UI 播报。
    *
-   *   ① 图鉴 ≥ 75%：逼玩家真的把这张图玩透（去不同深度、钓不同的鱼）
-   *   ② 潜到过本图上限：免费（鱼线升到本图闸门就自然满足），但让"潜到底"成为明确目标
-   *   ③ 付许可证金币：辅助条件，作用是"让换图有一点成本感"，不是主要门槛
+   * **为什么在三个地方调用**：解锁条件有两类，各自的变更时机不同 ——
+   *   · `unlockDepth`（潜到更深）→ 只会在**一竿结束写纪录**时变（`enterResult`）
+   *   · `unlockMap`（到过那张图）→ 在**换图**那一刻变（`enterMap`）
+   *   · 收起手机回到待机 → 再兜一次（`closePhone`，覆盖"在店里买东西导致解锁"的边角）
    *
-   * 为什么不用"金币够了就能走"：纯金币门槛是线性的，而玩家收入被深度封顶卡住，
-   * 最后一张图前面要刷 1000+ 竿 —— 那会把游戏变成纯肝（见 EXPANSION 3.3）。
+   * **只在这里判定一次**：界面（横幅 / 红点 / New 角标）全部只读 `save.gunNews`，
+   * 不自己算"这把算不算新"—— 否则同一把枪会在三处被判三次，迟早判得不一样。
+   */
+  _syncGunNews() {
+    const news = this._gunNews();
+    const fresh = GUNS.filter((g) => {
+      if (g.price <= 0) return false;                        // 初始枪不是"新货"
+      if (this.save.guns.owned.includes(g.id)) return false; // 已经买过的更不是
+      // ⚠ 必须查 **gunAnnounced（播报过）** 而不是 gunNews（未读）：
+      //   未读在玩家点开枪店那一刻就清空了 —— 查它的话，同一把枪会在
+      //   每次回待机时被当成"新货"再推一遍，红点永远灭不掉（N4 抓的）。
+      if (this._gunAnnounced().includes(g.id)) return false;   // 已经播报过
+      return this.gunUnlocked(g);
+    });
+    if (fresh.length) {
+      const ann = this._gunAnnounced();
+      for (const g of fresh) { news.push(g.id); if (!ann.includes(g.id)) ann.push(g.id); }
+      persist(this.save);
+      this.ui.queueGunNews(fresh.map((g) => g.id));
+      SFX.record();          // 轻轻一声提示音 —— 不是"做对了事"的那种奖励音
+    }
+    this.syncBadges();
+    return fresh.map((g) => g.id);
+  }
+
+  /** 玩家点开枪店 → 未读清零：手机红点消失、枪店 App 红点消失、店里不再挂「New」 */
+  _clearGunNews() {
+    if (!this._gunNews().length) return;
+    this.save.gunNews = [];
+    persist(this.save);
+    this.syncBadges();
+  }
+
+  /** 左下角那部手机的红点：有未读新枪，或者有还没接的来电 */
+  syncBadges() {
+    const n = this._gunNews().length + (this.ringingCall ? 1 : 0);
+    this.ui.setPhoneBadge(n);
+  }
+
+  // ── 船厂（v0.7）─────────────────────────────────────────────
+  /**
+   * 船厂列表：**界面只渲染，不做判断** —— 拥有 / 当前 / 买得起 / 外观全在这里算好
+   * （和枪店同一条原则：判断留在 UI 里的话，"按钮亮着却买不了"会散得到处都是）。
+   */
+  boatList() {
+    const b = this._boats();
+    return BOATS.map((def) => ({
+      def,
+      owned: b.owned.includes(def.id),
+      current: b.current === def.id,
+      affordable: this.save.coins >= def.price,
+    }));
+  }
+
+  /**
+   * 买一艘船：扣 10,000、记进存档、**当场开出去**（current 直接切到新船）。
+   * 三艘船同价，所以这是一个"挑玩法"的选择，不是"攒更多钱买更好的"的阶梯（见 config 的 BOATS）。
+   */
+  buyBoat(id) {
+    const def = boatById(id);
+    if (!def) return false;
+    const b = this._boats();
+    if (b.owned.includes(id)) return this.setBoat(id);       // 已经有的船 → 当成"换船"
+    if (this.save.coins < def.price) { SFX.deny(); this.world.addShake(2); return false; }
+    this.save.coins -= def.price;
+    b.owned.push(id);
+    b.current = id;
+    this.save.boatApp = true;
+    persist(this.save);
+    this.applyUpgrades();            // 效果 + 外观一起换
+    this.ui.setCoins(this.save.coins);
+    this.world.burstSparks(this.hook.x, WORLD.surfaceY, 18, 1.4);
+    this.ui.floatText(this.hook.x, WORLD.surfaceY + 16 * MODEL_SCALE, `${def.name} 已下水`, 'good');
+    SFX.buy();
+    return true;
+  }
+
+  /**
+   * 换一艘**已经拥有**的船：免费。
+   * 为什么免费：三艘船是"三种玩法"，不是"三条升级路线" —— 买断之后应该允许随便试，
+   * 否则玩家会先去查攻略再买，那就把一个选择变成了算术题。
+   */
+  setBoat(id) {
+    const b = this._boats();
+    if (!b.owned.includes(id)) return false;
+    b.current = id;
+    persist(this.save);
+    this.applyUpgrades();
+    SFX.tap();
+    return true;
+  }
+
+  /**
+   * 某张地图的换图进度 —— v0.7 起**只剩两条条件**，而且不再看图鉴 / 深度 / 许可证。
+   *
+   *   ① **钓到海图**（首图海沟底部的宝箱里，见 `_getChart()`）
+   *      —— 它替代了"图鉴 90% + 潜到上限"两条：海图就在最底下，
+   *         "潜到上限"成了它的**前提**而不是并列条件，而"钓到 90% 的鱼种"
+   *         实测靠刷竿数就能满足（一竿覆盖五层，见 GAMEPLAY §4.6 结论 2）。
+   *   ② **至少拥有一艘船**（船厂，10,000）—— 钱必须有出口，
+   *      而且这个出口是一件**真的能用的东西**（金币 / 鱼护 / 护钩），比一笔过路费更像奖励。
+   *
+   * 首图（`MAPS[0]`）是出生地，**没有任何条件**。
+   *
+   * ⚠ `conds` 由 game 算好交给界面渲染 —— 界面不做任何判断（和枪店同一条原则）。
    */
   mapProgress(map) {
-    const mine = SPECIES.filter((s) => s.zones.some((z) => map.zones.includes(z)));
-    const got = mine.filter((s) => (this.save.codex[s.id]?.n || 0) > 0).length;
-    const ratio = mine.length ? got / mine.length : 1;
+    const first = map.id === MAPS[0].id;
     const maxD = mapMaxDepth(map);
     const reached = Math.min(this.mapBestOf(map.id), maxD);
-    const owned = map.license <= 0 || this._licenses().includes(map.id);
+    const hasChart = !!this.save.chart;
+    const boats = this._boats();
+    const hasBoat = boats.owned.length > 0;
+    const cur = boatById(boats.current);
+
+    const conds = first ? [] : [
+      {
+        id: 'chart', ok: hasChart,
+        text: hasChart ? `已持有${CHART.name}` : `潜到 −${maxD}m，找到海底的宝箱`,
+      },
+      {
+        id: 'boat', ok: hasBoat,
+        text: hasBoat ? `已拥有船只 · ${cur ? cur.name : ''}` : '在船厂买一艘船（10,000）',
+      },
+    ];
+    const gateOk = conds.every((c) => c.ok);
+
     return {
-      map, owned, maxD, reached,
+      map, first, maxD, reached,
+      // `owned` 的语义 = "这张图已经属于你（可以自由往返）"。
+      // 首图恒真；其余图由 gateOk 决定 —— 门槛一旦满足就永久成立（船只/海图都不会消失）。
+      owned: first || gateOk, conds, gateOk, hasChart, hasBoat,
       depthOk: reached >= maxD,
-      codex: got, codexTotal: mine.length, codexRatio: ratio, codexOk: ratio >= 0.75,
       price: map.license, affordable: this.save.coins >= map.license,
-      canBuy: !owned && ratio >= 0.75 && reached >= maxD && this.save.coins >= map.license,
+      canBuy: !first && gateOk,
     };
   }
 
-  /** 买下某张地图的许可证并进去。条件不够 / 买不起返回 false，调用方负责提示。 */
+  /** 进某张图（门槛过了就直接过去；许可证机制保留给将来的图）。条件不够返回 false。 */
   buyMap(id) {
     const map = mapById(id);
     const p = this.mapProgress(map);
-    if (p.owned) return this.enterMap(id);
-    if (!p.canBuy) return false;
-    this.save.coins -= map.license;
-    this._licenses().push(map.id);
+    if (!p.gateOk) return false;
+    if (map.license > 0 && !this._licenses().includes(map.id)) {
+      if (this.save.coins < map.license) return false;
+      this.save.coins -= map.license;
+      this._licenses().push(map.id);
+    }
     return this.enterMap(id);
   }
 
   /**
-   * 换到某张已拥有的地图：清场、换世界主题、刷新尺子总量与界面。
+   * 换到某张地图：清场、换世界主题、刷新尺子总量与界面。
    *
    * 顺序有讲究：`world.applyMap` / `ui.setMap` 必须在 `spawnFish` 之前 ——
    * 刷鱼读的是 `this.map`（存档已经改了，没问题），但尺子的总量和分区
    * 要等 ui.setMap 之后才对齐，`refreshApp` 又必须在 ui.setMap 之后。
+   *
+   * ⚠ 门槛（**海图 + 船**）由 `mapProgress` 判定；这里再兜一次是防"数据在两次渲染之间变了"。
+   *   放行条件：① 首图（出生地，无条件）；② 手里有这张图的许可证 ——
+   *   v0.7 之后两张图的许可证都是 0（没有地图会发证），这条是留给**回归脚本 /
+   *   存档迁移**的口子：`save.licenses` 里有 id 就允许进去。
    */
   enterMap(id) {
     const map = mapById(id);
+    // ① 当前所在的那张图**无条件放行**：存档里的图必须能继续玩（老档 / 手改存档）
+    // ② 换到**别的**图：必须过门槛（海图 + 船，见 mapProgress）
+    // ③ 许可证（将来加图可能用）：> 0 时必须已经持有
+    if (map.id !== this.save.currentMap && !this.mapProgress(map).gateOk) return false;
     if (map.license > 0 && !this._licenses().includes(map.id)) return false;
     this.save.currentMap = map.id;
     this.fish.releaseAll();
@@ -590,21 +1058,24 @@ class Game {
     // 否则会出现"船已经开到北极了，标题还写着宁静海湾"。
     if (this.state === STATE.IDLE) this.ui.setSeaTitle(this._seaTarget());
     this.ui.refreshApp();
+    // 到过一张新图 → 那张图的枪立刻上架（散弹枪），并触发播报（v0.7 第三批）
+    this._syncGunNews();
     return true;
   }
 
   /**
-   * 「航线」App 里的按钮回调：当前图 → 忽略；已拥有 → 直接过去；
-   * 条件满了 → 扣钱买证并过去；否则 → 拒绝音效。
-   * 界面那边已经按同样的条件把按钮置灰了，这里再判一次是防"数据在两次渲染之间变了"。
+   * 「航线」App 里的按钮回调：当前图 → 忽略；门槛过了（首图 / 海图 + 船）→ 直接过去；
+   * 否则 → 拒绝音效。界面那边已经按同样的条件把按钮置灰了，这里再判一次是防"数据变了"。
+   *
+   * ⚠ v0.7 起**换图不花钱**（许可证全 0）：那 10,000 是花在**船**上的，
+   *   而船是在船厂买的 —— 花的钱变成了一件真的能用的东西。
    */
   _goMap(id) {
     const map = mapById(id);
     if (map.id === this.map.id) return;
     const p = this.mapProgress(map);
-    if (p.owned) { SFX.tap(); this.enterMap(map.id); return; }
-    if (!p.canBuy) { SFX.deny(); this.world.addShake(2); return; }
-    SFX.buy();
+    if (!p.gateOk) { SFX.deny(); this.world.addShake(2); return; }
+    SFX.tap();
     this.buyMap(map.id);
   }
 
@@ -635,7 +1106,9 @@ class Game {
   _buy(key) {
     if (!UPGRADE_ORDER.includes(key)) return;
     const lv = this.save.levels[key];
-    if (lv >= MAX_LEVEL) return;
+    // ⚠ 用 maxLvOf 而不是 MAX_LEVEL：一次性工具（绞盘）的上限是 1，
+    //   直接比 MAX_LEVEL 会让它在 lv=1 时还能"再买一次"（价格是 Infinity，按钮永远点不动）。
+    if (lv >= maxLvOf(key)) return;
     const cost = upgradeCost(key, lv);
     if (this.save.coins < cost) { SFX.deny(); this.world.addShake(2); return; }
     this.save.coins -= cost;
@@ -647,6 +1120,33 @@ class Game {
     this.ui.refreshApp();                  // 商店 App 原地重绘（价格 / 等级 / 可买状态）
   }
 
+  // ── 铅坠·直达深度（v0.5）─────────────────────────────────
+  /**
+   * 开关「直达深度」。
+   *
+   * ⚠ 开关状态存在**存档**里（`save.drop.on`），不是 session 状态 ——
+   *   它是一个玩家偏好（"我懒得看表层了"），每次开游戏都要重设一次会很烦。
+   *   但它的**效果**是每竿现算的：`applyUpgrades` 里算出的 `dropMax` 一变
+   *   （买鱼线 / 换图），目标深度就会被重新钳制。
+   */
+  setDropEnabled(on) {
+    this.save.drop.on = !!on;
+    persist(this.save);
+    SFX.tap();
+    this.applyUpgrades();
+    this.ui.refreshApp();
+  }
+
+  /** 设定目标深度（会被钳到 [DROP_MIN_DEPTH, dropMax]）。`delta` 为 0 时表示直接设值。 */
+  setDropDepth(v) {
+    const cap = this.dropMax || 0;
+    const want = clamp(Math.round(Number(v) || 0), TUNING.DROP_MIN_DEPTH, Math.max(TUNING.DROP_MIN_DEPTH, cap));
+    this.save.drop.depth = want;
+    persist(this.save);
+    SFX.tap();
+    this.ui.setDropControl(this.save.drop, cap, TUNING.DROP_MIN_DEPTH);
+  }
+
   // ── 枪店（v0.4）──────────────────────────────────────────
   /**
    * 枪店里一把枪要显示的全部信息。
@@ -655,12 +1155,58 @@ class Game {
    * 全在这里算好。为什么不把这些判断放进 ui.js：那些判断散在界面里之后，
    * "按钮亮着却点不动"这类不一致会同时出现在好几个地方，而且没人测得到。
    */
+  /** ⚠ 未读新枪的读写入口（老存档里没有这个字段 —— 和 licenses / calls 同一个理由） */
+  _gunNews() {
+    if (!Array.isArray(this.save.gunNews)) this.save.gunNews = [];
+    return this.save.gunNews;
+  }
+
+  /** ⚠ 播报过的新枪（「NEW」角标的来源）—— 只增不减，买下之后 isNew 自己变 false */
+  _gunAnnounced() {
+    if (!Array.isArray(this.save.gunAnnounced)) this.save.gunAnnounced = [];
+    return this.save.gunAnnounced;
+  }
+
+  /**
+   * 一把枪现在**能不能在枪店看到**（v0.7 第三批，A2 = a + b）。
+   *
+   *   a) `unlockMap`   要「到过那张图」（= `mapProgress().owned`，与渔具店分段解锁同源）
+   *   b) `unlockDepth` 在那张图**潜到过这个深度**（读 `mapBest`）
+   *
+   * ⚠ **已拥有的枪永远可见** —— 老存档兜底（B5 的教训）：
+   *   一个在分段解锁落地之前就买过巴雷特的玩家，不能因为还没潜到 1100m
+   *   就发现"我手里的枪在店里变成了黑影"。
+   */
+  gunUnlocked(g) {
+    if (g.price <= 0 || this.save.guns.owned.includes(g.id)) return true;
+    if (g.unlockMap && !this.mapProgress(mapById(g.unlockMap)).owned) return false;
+    if (g.unlockDepth != null && this.mapBestOf(g.unlockMap) < g.unlockDepth) return false;
+    return true;
+  }
+
+  /** 锁着的那把枪，卡片上要写的"怎么才能见到它" */
+  gunLockText(g) {
+    if (g.unlockMap && !this.mapProgress(mapById(g.unlockMap)).owned) {
+      return `到过「${mapById(g.unlockMap).name}」后上架`;
+    }
+    if (g.unlockDepth != null) return `在这片海潜到 −${g.unlockDepth}m 后上架`;
+    return '尚未解锁';
+  }
+
   gunEntry(g) {
     const lv = this.save.guns.levels[g.id] || 0;
+    const owned = g.price <= 0 || this.save.guns.owned.includes(g.id);
+    const unlocked = this.gunUnlocked(g);
     return {
       gun: g,
       lv,
-      owned: g.price <= 0 || this.save.guns.owned.includes(g.id),
+      unlocked,
+      locked: !unlocked,
+      // ⚠ 必须排除"已拥有"：否则买下新枪的那一刻 NEW 角标会**永远挂在卡片上**
+      //   （announced 只增不减，就是为"还没买"的窗口服务的）。
+      isNew: unlocked && !owned && this._gunAnnounced().includes(g.id),
+      lockText: unlocked ? '' : this.gunLockText(g),
+      owned,
       current: this.save.guns.current === g.id,
       stat: gunStats(g.id, lv),
       next: lv >= GUN_MAX_LEVEL ? null : gunStats(g.id, lv + 1),
@@ -674,6 +1220,9 @@ class Game {
     const g = GUNS.find((x) => x.id === id);
     if (!g || g.price <= 0) return;
     if (this.save.guns.owned.includes(id)) return;
+    // 分段解锁（v0.7 第三批）：还没上架的枪**买不了** —— 界面虽然不给按钮，
+    // 这里再兜一次（探针 / 手改 DOM 也能拦住）。
+    if (!this.gunUnlocked(g)) { SFX.deny(); this.world.addShake(2); return; }
     if (this.save.coins < g.price) { SFX.deny(); this.world.addShake(2); return; }
     this.save.coins -= g.price;
     this.save.guns.owned.push(id);
@@ -722,6 +1271,7 @@ class Game {
     this.ui.showHud(true);
     this.ui.showPhoneBtn(false);
     this.ui.showGunBar(false);
+    this.ui.showFastReel(false);
     this.ui.setDepthChip(true);           // 开始游戏后深度 chip 才出现（需求⑨）
     this.ui.clearCatch();
     this.ui.clearFloats();
@@ -799,6 +1349,28 @@ class Game {
       this.hook.y = ny;
       this.world.burstSplash(nx, WORLD.surfaceY, TUNING.castSplash);
       SFX.splash();
+
+      // ── 铅坠·直达深度（v0.5）──────────────────────────────
+      // 落水之后如果开了直达深度，钩子**直接出现在玩家选的深度**，省掉这一段下潜。
+      //
+      // ⚠ 两个必须注意的点：
+      //   ① 必须放在"落水坐标已经定完"之后 —— 否则抛物线终点会被覆盖掉，落点变成深度点。
+      //   ② 这一帧**不能**让下潜的线段扫掠判定把 `0m → 目标深度` 当成"扫过的路径"：
+      //      那会一路串鱼、一路撞鱼。这里直接改坐标，并给 `dropGraceT` 一段落地缓冲
+      //      （见 config 的 DROP_GRACE：玩家是盲选深度的，一落地就撞鱼是运气不是操作）。
+      //      扫掠判定的 `prevY` 在**下一帧**才会重新取，所以跨帧不会连成一条长线段。
+      const drop = resolveDropDepth(this.save, this.dropMax || 0);
+      if (drop > 0) {
+        this.hook.y = WORLD.surfaceY - drop;
+        this.hook.setPosition(this.hook.x, this.hook.y);
+        this.maxDepthReached = Math.max(this.maxDepthReached, drop);
+        this.dropUsed = drop;
+        this.dropGraceT = TUNING.DROP_GRACE;
+        this.world.burstBubbles(this.hook.x, this.hook.y, 18, 26);
+        this.ui.floatText(this.hook.x, this.hook.y + 26 * MODEL_SCALE,
+          `直达 −${Math.round(drop)}m`, 'good sm');
+      }
+
       this.ui.setHint('左右拖动躲开鱼 · 碰到就收线');
       return;
     }
@@ -857,6 +1429,10 @@ class Game {
     this.ascendRampT = TUNING.ascendRamp;
     this.state = STATE.ASCEND;
     this.ui.showReel(false);
+    // 快速回收按钮：**只有买了绞盘才有**（levels.winch > 0）。
+    // 它是本竿唯一的"加速"入口，所以必须在进入上升的第一帧就出现 ——
+    // 晚一帧的话玩家会先看到钩子动了一下、按钮才冒出来。
+    this.ui.showFastReel(this.save.levels.winch > 0);
     this.ui.setHint('左右拖动 · 撞到鱼就串上来');
     this.run.depth = Math.round(this.maxDepthReached);
     this.world.burstBubbles(this.hook.x, this.hook.y, 18, 26);
@@ -913,24 +1489,52 @@ class Game {
   }
 
   // ── ② 上升（鱼是奖励） ───────────────────────────────────
+  /**
+   * 本竿当前的实际收线速度。
+   *
+   * 快速回收（绞盘，v0.5）：买下之后玩家可以在上升阶段按 HUD 上的按钮，
+   * 把收线速度乘 `FAST_REEL_MUL` 直到出水。
+   *
+   * ⚠ 它是**玩家主动触发**的，不是自动的：上升阶段串鱼是主要收入来源，
+   *   无脑加速会让玩家一路跳过鱼群。加速必须是一个"我现在够了"的决策 ——
+   *   这也是为什么绞盘值得买（省时间）但不会让玩法退化（少抓鱼）。
+   */
+  get reelSpeed() {
+    return this.fastReel ? this.ascendSpeed * TUNING.FAST_REEL_MUL : this.ascendSpeed;
+  }
+
+  /** 按下「快速回收」：本竿剩下的上升段全速收线。没买绞盘 / 不在上升阶段时无效。 */
+  fastReelNow() {
+    if (this.state !== STATE.ASCEND) return false;
+    if (!(this.save.levels.winch > 0)) return false;   // 没买绞盘
+    if (this.fastReel) return false;                   // 本竿已经按过了
+    this.fastReel = true;
+    this.ui.setFastReel(true);
+    this.ui.floatText(this.hook.x, this.hook.y + 24 * MODEL_SCALE, '快速回收 ▲▲', 'good sm');
+    SFX.reel();
+    this.world.addShake(5);
+    return true;
+  }
+
   _updateAscend(dt) {
     const prevY = this.hook.y;
     const prevX = this.hook.x;
+    const spd = this.reelSpeed;
     // ── 回拉起步缓动（v0.3.1 需求③）──
     // 位置曲线 y(u) = y0 + D·(3u³ − 2u²)：
     //   起手速度 0（接住前面刹停的"静止"）、末端速度 5D/T（接上满速上拉），
     //   中间在 u ≈ 0.44 处**先往下沉 13%·D** —— 这就是 anticipation，
-    //   也是"easeInBack 的感觉"的来源。令末端速度 = ascendSpeed 得 D = ascendSpeed·T/5。
+    //   也是"easeInBack 的感觉"的来源。令末端速度 = 收线速度得 D = 收线速度·T/5。
     // ⚠ 直接置 state='ascend' 的夹具（verify5 C8）不走 _beginAscend，
     //   ascendRampT ≤ 0，会直接落到下面的满速分支 —— 那些断言因此不受影响。
     if (this.ascendRampT > 0) {
       this.ascendRampT -= dt;
       const T = TUNING.ascendRamp;
       const u = clamp(1 - Math.max(0, this.ascendRampT) / T, 0, 1);
-      const D = (this.ascendSpeed * T) / 5;
+      const D = (spd * T) / 5;
       this.hook.y = this.ascendFrom + D * u * u * (3 * u - 2);
     } else {
-      this.hook.y += this.ascendSpeed * dt;    // 绞盘升级直接作用在这里
+      this.hook.y += spd * dt;                 // 收线速度（含快速回收倍率）
     }
     this.hook.setPosition(this.hook.x, this.hook.y);
     this.hook.layoutCatch(this.caught);
@@ -946,31 +1550,32 @@ class Game {
       if (d < hr + f.radius) this._catch(f);
     }
 
+    // 上升途中路过海床宝箱：同样能捡（碰到即得，见 `_checkChest`）
+    this._checkChest(prevX, prevY);
+
     // 出水
     if (this.hook.y >= WORLD.surfaceY - 2 * MODEL_SCALE) this.enterAir();
   }
 
   /**
-   * 串上一条鱼。
+   * 串上一条鱼（或一件物品）。
    *
-   * 鱼护（creel）在这里生效：**超过上限时，最早串上的那条会挣脱**（而不是"新鱼串不上"）。
-   * 为什么选"挤掉最老的"：它把鱼护从一个"硬上限"变成了一个**取舍** ——
-   * 上升途中你会看着一串 66 的灯笼鱼，犹豫要不要为下面那条 260 的皇带鱼腾位置。
-   * 硬上限只会让人挫败（"我看到了却抓不了"），挤掉最老的才会产生决策。
+   * **鱼护满了之后怎么办 —— v0.7 改过口径**：
+   *   旧：超过上限时"最早串上的那条挣脱"（挤掉最老的）。当时的理由是"制造取舍"。
+   *   新：**不挤、不丢**，直接**自动加速收线**（见 `_creelFull()`）。
+   *
+   * 为什么改（旧口径的两个实际问题）：
+   *   ① 玩家明明碰到了鱼，却看着一条已到手的鱼飞走 —— 负反馈，而且**账算不平**
+   *      （"我明明碰到了却没拿到"）；
+   *   ② 鱼护那个数字玩家得一直盯着，"还剩几条"变成一道心算题。
+   *   改成"满了就回家"之后：**串满 = 该出水了**，节奏反而更利落 ——
+   *   而且它和"上升阶段撞鱼不会掉鱼"是同一条规则的两面（见 `_catch` 的调用点）。
    */
   _catch(f) {
-    // 鱼护满 → 最早的那条挣脱（放回水里，横向推开一点 + 1.2s 免疫，免得同一帧又被扫回来）
+    // 鱼护满 → 不再收新的（也不再挤掉旧的），并触发一次"自动收线"
     if (this.caught.length >= this.creelLimit) {
-      const old = this.caught.shift();
-      const p0 = old.mesh.position;
-      const away = p0.x < this.hook.x ? -1 : 1;
-      old.release(p0.x + away * 30, p0.y);
-      old.immuneT = 1.2;
-      this.run.lost += 1;
-      this.ui.dropFirstCatch(this.caught.length);
-      this.world.burstBubbles(p0.x, p0.y, 8, 12);
-      this.ui.floatText(p0.x, p0.y + 14 * MODEL_SCALE, `${old.def.name} 挣脱了`, 'bad sm');
-      SFX.escape();
+      this._creelFull();
+      return;
     }
 
     const p = f.mesh.position;
@@ -995,8 +1600,73 @@ class Game {
     this.hook.layoutCatch(this.caught);
   }
 
-  /** 记入图鉴：首次钓到才算「解锁」，之后只累加次数与最高身价 */
-  _recordCodex(f) {
+  /**
+   * 鱼护满了（v0.7）：提示一次 + **自动加速收线**。代替了旧的"最早那条挣脱"。
+   *
+   * ⚠ 这一条**不走绞盘的闸门**：`fastReelNow()` 会先检查 `levels.winch`，
+   *   而这里是**规则**（串满就该回家），不是玩家买的工具 —— 所以直接置 `fastReel`。
+   *   它也**不消耗**玩家手里那次手动机会（同竿还能按，只是已经没有意义了）。
+   *
+   * ⚠ 每竿只提示一次（`_creelFullDone`）：不然后面每碰到一条鱼都会刷一行飘字，
+   *   上升段会变成刷屏。
+   */
+  _creelFull() {
+    if (this._creelFullDone) return;
+    this._creelFullDone = true;
+    this.fastReel = true;
+    this.ui.setFastReel(true);      // 按钮变灰 = "这一竿的加速已经替你按了"
+    const p = this.hook;
+    this.ui.floatText(p.x, p.y + 18 * MODEL_SCALE, '鱼护满了 · 自动收线', 'good');
+    this.ui.setHint('鱼护满了 —— 直接收线，这一段不会再掉鱼');
+    this.world.addShake(4);
+  }
+
+  /**
+   * 海床上的宝箱（v0.7）：钩子**碰到就捡**。
+   *
+   * 为什么不走"钓上来 → 抛向天空 → 打下来"那条链：宝箱是**剧情道具**不是渔获。
+   * 让玩家打丢了还得重潜一次海沟底部，那不是设计意图 —— 拿到海图这件事本身
+   * 已经由"你能潜到 860m"证明了。
+   *
+   * ⚠ 它**不占鱼护**、不进空中结算、也不计入图鉴（见 config 的 CHEST 注释）。
+   */
+  _checkChest(prevX, prevY) {
+    if (this.save.chart || this._chestTaken) return;
+    const c = this.world.chestAt;
+    if (!c) return;
+    if (distToSegment(c.x, c.y, prevX, prevY, this.hook.x, this.hook.y) > c.r + TUNING.bumpRadius) return;
+    this._chestTaken = true;
+    this._getChart(c);
+  }
+
+  /**
+   * 捡到海图 —— 换图门槛的前一半（另一半是船，见 `mapProgress`）。三件事一起做：
+   *   ① `save.chart = true`；② **直接解锁船厂 App**；③ 回待机时"码头管理员"会打来电话
+   *      （`CALLS` 里 `when:{ chart:true }` 的两通，按"有没有船"分流）。
+   *
+   * ⚠ 为什么这里直接解锁船厂：需求原话是"若是玩家没有解锁船厂 App 则直接给玩家解锁，
+   *   并去掉船厂 NPC 引导"。也就是说 —— 如果玩家**先**钓到海图（还没到第 10 竿），
+   *   那通"推荐新船"的电话就不该再打了；实现靠的是电话表里的 `when.appLocked: 'boat'`
+   *   （App 已解锁 → 这通电话永远不响），而不是在这里改电话。
+   */
+  _getChart(c) {
+    this.save.chart = true;
+    this.save.boatApp = true;
+    const gold = CHEST.gold;
+    this.save.coins += gold;
+    persist(this.save);
+    this.ui.setCoins(this.save.coins);
+    this.world.hideChest();
+    this.world.burstCoins(c.x, c.y, 18);
+    this.world.burstSparks(c.x, c.y, 24, 1.6);
+    this.world.addShake(12);
+    this.ui.floatText(c.x, c.y + 18 * MODEL_SCALE, `获得${CHART.name}！`, 'good');
+    if (gold > 0) this.ui.floatText(c.x, c.y + 36 * MODEL_SCALE, `+${gold}`, 'good sm');
+    this.ui.setHint(`拿到${CHART.name}了 —— 去船厂买艘船就能开去极地`);
+    SFX.buy();
+  }
+
+  /** 记入图鉴：首次钓到才算「解锁」，之后只累加次数与最高身价 */  _recordCodex(f) {
     const id = f.def.id;
     const rec = this.save.codex[id];
     if (rec) {
@@ -1014,6 +1684,7 @@ class Game {
     this.state = STATE.AIR;
     this.hook.setVisible(false);
     this.ui.showReel(false);
+    this.ui.showFastReel(false);   // 绞盘只在上升阶段有意义
     this.ui.setHint(this._gunHint());
     this.ui.showGunBar(true);
     this.ui.setZone(null);
@@ -1195,8 +1866,10 @@ class Game {
     const p = this._aimPoint();
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
 
-    // 最终伤害 = 枪械档位伤害 × 攻击力倍率（全局那一项升级）
-    let dmg = s.damage * this.gunMul;
+    // 最终伤害 = 枪械当前档位的伤害，**没有别的乘数**。
+    // ⚠ v0.5：「攻击力」那条全局倍率已并入枪械自身的 `dmg` 曲线（见 config 的 GUNS 注释），
+    //   所以这里**不要**再乘任何系数 —— 想调攻击力就调 `GUNS[].dmg`。
+    let dmg = s.damage;
     // 激光：伤害随连续照射时间递增，×rampMax 封顶（见 GUNS.laser 的注释）
     if (g.mech === 'laser') dmg *= 1 + Math.min(s.rampMax, s.ramp * this.gunHeat);
 
@@ -1334,11 +2007,12 @@ class Game {
     this.ui.setGunState({
       id: g.id, name: g.name, icon: g.icon, mech: g.mech,
       level: this.gunLv,
+      // 伤害/发：v0.5 起这是"攻击力"的唯一体现（全局倍率已并入枪械的 dmg 曲线）
+      damage: s.damage,
       mag: s.mag, ammo: this.gunAmmo,
       reloadT: this.gunReloadT, reloadMax: s.reload || 0,
       heat: this.gunHeat, heatMax: s.mag || 0,
       ramp: s.ramp, rampMax: s.rampMax,
-      mul: this.gunMul,
     });
   }
 
@@ -1349,7 +2023,7 @@ class Game {
       // 扣钱鱼：爆炸扣钱。
       // 金币不会扣成负数；本竿收入按「实际扣掉的数额」记，
       // 否则身上没钱时两个账对不上（结算显示的收入会莫名其妙少一截）。
-      // 罚款由「保险」减免（Lv20 减 80%，30 → 6）。
+      // ⚠ v0.5：「保险」已移除 —— 罚款是固定值，没有减免路径（见 config 的 pufferPenalty）。
       this.combo = 0; this.mult = 1;
       const fine = this.pufferPenalty;
       const before = this.save.coins;
@@ -1358,9 +2032,7 @@ class Game {
       this.world.burstChunks(p.x, p.y, 22);
       this.world.burstSparks(p.x, p.y, 26, 1.6);
       this.world.addShake(16);
-      const saved = TUNING.pufferPenalty - fine;
-      this.ui.floatText(p.x, p.y,
-        saved > 0 ? `${f.def.name} −${fine}（保险省 ${saved}）` : `${f.def.name} −${fine}`, 'bad');
+      this.ui.floatText(p.x, p.y, `${f.def.name} −${fine}`, 'bad');
       this.ui.setCombo(0, 1);
       this.ui.setCoins(this.save.coins);
       SFX.puffer();
@@ -1372,7 +2044,10 @@ class Game {
     this.mult = this.multOfCombo;
     this.run.bestCombo = Math.max(this.run.bestCombo, this.combo);
 
-    const gain = Math.max(1, Math.round(f.value * this.mult));
+    // 船只「黄金号」的金币加成落在这里（v0.7）：**乘在结算金额上**，
+    // 而不是改鱼的身价 —— 后者会连带影响"身价决定弹道"（贵鱼更难打），
+    // 买条船就顺手改难度，那不是我们想要的。
+    const gain = Math.max(1, Math.round(f.value * this.mult * (this.boatGoldMul || 1)));
     this.save.coins += gain;
     this.run.earned += gain;
     this.run.shot += 1;
@@ -1552,6 +2227,7 @@ class Game {
     this.ui.showHud(false);
     this.ui.showPhoneBtn(false);
     this.ui.showGunBar(false);
+    this.ui.showFastReel(false);
     this.ui.setCombo(0, 1);
     this.ui.setHint('');
     this.ui.setCatchVisible(false);
@@ -1559,6 +2235,23 @@ class Game {
     this.ui.setZone(null);
     for (const b of this.birds) this.world.scene.remove(b.mesh);
     this.birds = [];
+
+    // ── 收竿前先把"还挂在天上、没打下来"的鱼记账（v0.6）──
+    //
+    // ⚠ 原来这里直接 `this.airFish = []`，那些鱼**既不进 `run.escaped`、结算面板也不显示**。
+    //   症状：玩家看到"天上明明还有鱼，怎么就结算了"，而且面板一个字都不解释 ——
+    //   他会以为是自己卡了或者游戏出 bug 了。
+    //
+    // 为什么单独记 `timedOut` 而不是全推进 `escaped`：
+    //   ① `escaped` 那条链是**按名字逐条列**的（"皇带鱼 逃走了"），
+    //      超时那一刻可能还挂着十几条，全列出来会把结算面板撑爆；
+    //   ② 两者的语义也不一样 —— `escaped` 是"我没打中，它掉回水里了"，
+    //      `timedOut` 是"时间到了，我还没打完"。混在一起玩家读不出区别。
+    //
+    // ⚠ 只算**非扣钱鱼**：扣钱鱼打掉是扣钱，留着它是玩家的正确选择，
+    //   把它算进"没打完"会让玩家觉得系统在指责他做对了的事。
+    const leftOver = this.airFish.filter((f) => f.state === FISH_STATE.AIR && !f.def.hazard);
+    this.run.timedOut = leftOver.length;
     this.airFish = [];
 
     const depth = this.run.depth || Math.round(this.maxDepthReached);
@@ -1570,6 +2263,8 @@ class Game {
     const mb = this._mapBest();
     const mid = this.map.id;
     if (depth > (mb[mid] || 0)) mb[mid] = depth;
+    // 深度纪录刚刚落库 —— 这正是"某把枪的 unlockDepth 被满足"的唯一时机（v0.7 第三批）
+    this._syncGunNews();
     if (alt > this.save.bestAlt) this.save.bestAlt = alt;
     this.save.totalEarned += Math.max(0, this.run.earned);
     persist(this.save);
@@ -1721,20 +2416,6 @@ class Game {
   /** 给定世界高度落在哪一层海域（深度尺 / 区域横幅用，实现在 config.js） */
   _zoneAt(y) { return zoneAtDepth(y, this.map.id); }
 
-  /**
-   * 声呐的输入：场上所有**还在游**的鱼的深度（米，正数）。
-   * 只报游动中的 —— 已经串上鱼线的、正被拖出水面的、飞在空中的都不该出现在尺子上，
-   * 否则尺子会变成"我已经钓到了什么"的回执，而不是"下面还有什么"的雷达。
-   */
-  _sonarDepths() {
-    const out = [];
-    for (const f of this.fish.active) {
-      if (f.state !== FISH_STATE.SWIM) continue;
-      out.push({ d: -f.mesh.position.y, hot: f.value >= SONAR_HOT_VALUE });
-    }
-    return out;
-  }
-
   // ── 主循环 ───────────────────────────────────────────────
   _loop = (now) => {
     requestAnimationFrame(this._loop);
@@ -1835,22 +2516,41 @@ class Game {
         this._bumpIcebergs();
 
         // 下潜撞鱼 → 自动收线。
-        // 判定半径的基准是固定值（TUNING.bumpRadius），不跟着鱼钩等级涨 ——
+        // 判定半径是**固定值**（TUNING.bumpRadius），不跟着鱼钩等级涨 ——
         // 否则升级鱼钩会让下潜变得寸步难行，等于花钱买罪受。
-        // 想让下潜更从容 → 单独买「加固」（this.bumpRadius = 基准 × (1 - rig)）。
+        // ⚠ v0.5：「加固」已移除，所以这里**没有**任何减免路径 ——
+        //   下潜的难度完全由走位决定（这是刻意的，见 config 的 bumpRadius 注释）。
+        //
+        // ⚠ 落地缓冲：铅坠·直达深度跳下来之后 `dropGraceT` 还没走完时**不判撞鱼**。
+        //   玩家是盲选深度的，一落地就撞鱼属于运气，不该由他承担（见 config 的 DROP_GRACE）。
+        if (this.dropGraceT > 0) this.dropGraceT -= dt;
         const bump = this.bumpRadius;
-        for (const f of this.fish.active) {
-          if (f.state !== FISH_STATE.SWIM) continue;
-          const p = f.mesh.position;
-          if (distToSegment(p.x, p.y, prevX, prevY, this.hook.x, this.hook.y) < bump + f.radius) {
-            this.world.addShake(TUNING.hitShake);
-            this.world.burstBubbles(p.x, p.y, 10, 14);
-            // v0.3：撞到鱼不再只是"惩罚"—— 先把它**直接串上鱼线**，
-            //   然后带着当前下潜速度滑一小段刹停，再上升。撞鱼依然是"这一竿到此为止"
-            //   （路线没选好的代价），但至少不是白撞：这条鱼归你。
-            this._catch(f);
-            this._reel('bump', dspd);
-            break;
+        // 海床上的宝箱（v0.7）：下潜路过也能捡 —— 碰到即得，不强制收线
+        this._checkChest(prevX, prevY);
+        if (this.dropGraceT <= 0) {
+          for (const f of this.fish.active) {
+            if (f.state !== FISH_STATE.SWIM) continue;
+            const p = f.mesh.position;
+            if (distToSegment(p.x, p.y, prevX, prevY, this.hook.x, this.hook.y) < bump + f.radius) {
+              this.world.addShake(TUNING.hitShake);
+              this.world.burstBubbles(p.x, p.y, 10, 14);
+              // v0.3：撞到鱼不再只是"惩罚"—— 先把它**直接串上鱼线**，
+              //   然后带着当前下潜速度滑一小段刹停，再上升。撞鱼依然是"这一竿到此为止"
+              //   （路线没选好的代价），但至少不是白撞：这条鱼归你。
+              this._catch(f);
+              // ── 船只「装甲号」的护钩（v0.7）──
+              // 本竿**第一次**撞击不强制收线，钩子继续往下走；第二次照常收线。
+              // ⚠ 只保护一次是刻意的：全程保护等于把整个下潜阶段变成无风险通道，
+              //   而"下潜躲鱼"是循环的第一段（§2.3 那条铁律的延续）。
+              if (this.hookGuardLeft > 0) {
+                this.hookGuardLeft -= 1;
+                this.world.burstSparks(p.x, p.y, 12, 1.2);
+                this.ui.floatText(p.x, p.y + 16 * MODEL_SCALE, '装甲护钩 · 继续下潜', 'good sm');
+              } else {
+                this._reel('bump', dspd);
+              }
+              break;
+            }
           }
         }
 
@@ -1911,16 +2611,8 @@ class Game {
 
     if (st === STATE.DESCEND || st === STATE.ASCEND) {
       this.hook.update(dt, this.time, this.world.darkness);
-      // 第三个参数是鱼钩**当前**深度 —— 声呐探测带跟着它走，而不是跟着"已潜最深"。
+      // 第三个参数是鱼钩**当前**深度 —— 深度尺上的游标跟着它走，而不是跟着"已潜最深"。
       this.ui.setDepth(this.maxDepthReached, this.maxDepth, -this.hook.y);
-      // 声呐刻度：0.15s 刷一次就够（每帧重建 DOM 是纯浪费），0 级时整个调用是空转
-      if (this.sonarPct > 0) {
-        this._sonarT -= dt;
-        if (this._sonarT <= 0) {
-          this._sonarT = 0.15;
-          this.ui.setSonarBlips(this._sonarDepths());
-        }
-      }
       // 抛竿滞空时钩子还在天上，没有"所在海域"可言（否则会被算成最深的一层）
       if (!this.castAir) this.ui.setZone(this._zoneAt(this.hook.y));
     } else if (st === STATE.AIR) {

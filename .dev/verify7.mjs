@@ -20,7 +20,7 @@ import path from 'node:path';
 import * as C from '../src/config.js';
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const PORT = 9363;
+const PORT = Number(process.env.VB_PORT || 9363);   // ⚠ 可用 VB_PORT 覆盖：上一次跑被打断时 Chrome 会占着端口，新一轮会"连到旧现场"
 const URL = process.argv[2] || 'http://127.0.0.1:8899/index.html';
 const OUT = path.resolve('.dev/shots-v7');
 
@@ -38,36 +38,32 @@ function check(name, ok, detail) {
 // ═══════════════════════════════════════════════════════════
 console.log('\n── A 数值表 ──');
 
-const { LEVELS, MAX_LEVEL, UPGRADES, UPGRADE_ORDER, GROWTH, upgradeCost, lvAt, MAP_LEVEL_CAP } = C;
+const { LEVELS, MAX_LEVEL, UPGRADES, UPGRADE_ORDER, GROWTH, upgradeCost, lvAt, maxLvOf, MAP_LEVEL_CAP } = C;
 const ROWS = Object.keys(LEVELS);
 
-check('A1 曲线条数 = 12，每条都是 21 级（0~20）无缺口',
-  ROWS.length === 12 && ROWS.every((k) => LEVELS[k].length === MAX_LEVEL + 1),
+check('A1 曲线条数 = 7，每条都是 21 级（0~20）无缺口',
+  ROWS.length === 7 && ROWS.every((k) => LEVELS[k].length === MAX_LEVEL + 1),
   `${ROWS.length} 条 · ${ROWS.join('/')}`);
 
 check('A2 每条曲线的值都是有限数（没有 NaN / undefined 洞）',
   ROWS.every((k) => LEVELS[k].every((v) => Number.isFinite(v))),
   ROWS.filter((k) => LEVELS[k].some((v) => !Number.isFinite(v))).join(',') || '全部有限');
 
-// 冻结位：这 8 条是 v0.1 就存在的曲线，索引 0~4 逐位不变。
+// 冻结位：这几条是 v0.1 就存在的曲线，索引 0~4 逐位不变。
 //
 // ⚠ v0.2「水下世界整体放大 2 倍」把这一整组**重新标定**了一次：
 //   宁静海湾的海域边界从 55/120/195/275/430 变成 110/240/390/550/860，
 //   maxDepth[0..4] 也跟着从 80/150/240/330/420 变成 320/450/580/710/840。
 //   老存档**不需要换 SAVE_KEY**：存档里存的是"等级"（Lv0~Lv4），不是数值本身，
 //   等级含义变了只是让老档的装备变强，不会读出 undefined 把物理打成 NaN。
-//   verify3 的 T8~T11 也同步断言 Lv4 的 840 / 17.6 / 136 / 240。
 //
-// ⚠ v0.4 枪械系统**移除了 blastRadius / damage 两条曲线**：它们原来是
-//   「攻击力」升级直接给的"伤害 + 半径绝对值"，现在所有枪都有自己的伤害与半径
-//   （见 config.js 的 GUNS），攻击力改成一条乘数曲线 gunPower。
-//   所以这里从 8 条变成 7 条 —— 这是**设计变更**，不是回归。
-//   （gunPower 是新曲线，不受"索引 0~4 冻结"约束，它的 Lv0 必须 = 1.00 倍。）
+// ⚠ v0.4 移除了 blastRadius / damage 两条曲线（攻击力改成乘数曲线 gunPower）。
+// ⚠ v0.5 **又移除了 5 条**：descendSpeed（铅坠改直达深度）、ascendSpeed（绞盘改一次性工具）、
+//   gunPower（攻击力并入 GUNS[].dmg）、insurance、sonar、rig（三项机制整体删除）。
+//   所以冻结位只剩 4 条 —— 这是**设计变更**，不是回归。
 const FROZEN = {
   maxDepth: [320, 450, 580, 710, 840],
   hookRadius: [8, 10.4, 12.8, 15.2, 17.6],
-  descendSpeed: [64, 82, 100, 118, 136],
-  ascendSpeed: [240, 252, 264, 276, 288],
   lampRadius: [52, 92, 136, 184, 240],
   lampPower: [0.10, 0.30, 0.48, 0.66, 0.84],
 };
@@ -75,46 +71,110 @@ const frozenBad = Object.entries(FROZEN)
   .filter(([k, v]) => !v.every((x, i) => LEVELS[k][i] === x))
   .map(([k]) => k);
 check('A3 索引 0~4 冻结 = v0.2 现值（保住前四套回归 + 老存档不用换 key）',
-  frozenBad.length === 0, frozenBad.length ? '被改动：' + frozenBad.join(',') : '7 条曲线逐位一致');
+  frozenBad.length === 0, frozenBad.length ? '被改动：' + frozenBad.join(',') : '4 条曲线逐位一致');
 
-// 攻击力是**乘数**曲线：Lv0 必须恰好是 1.00（不然"没升过攻击力"的新玩家
-// 一开始就吃到非零加成，所有枪的标定值全部对不上）
-check('A3b 攻击力（gunPower）是乘数曲线：Lv0 = 1.00、单调递增、Lv20 = 3.80',
-  LEVELS.gunPower[0] === 1 && LEVELS.gunPower[20] === 3.8
-  && LEVELS.gunPower.every((v, i) => i === 0 || v > LEVELS.gunPower[i - 1]),
-  `${LEVELS.gunPower[0]} → ${LEVELS.gunPower[20]}`);
+// 铅坠（v0.5）：曲线语义从"下潜速度"换成"可直接跳过的最大深度"。
+// Lv0 = 80 是刻意的 —— 它让"直达深度"从开局就有一点用，而不是买了才从 0 开始。
+// 上限 Lv20 = 1540 = 最深地图 2200 的 70%（和 TUNING.DROP_MAX_RATIO 同一个口径）。
+check('A3b 铅坠 dropDepth：Lv0 = 80、Lv20 = 1540（= 2200 × 70%）、单调递增',
+  LEVELS.dropDepth[0] === 80 && LEVELS.dropDepth[20] === 1540
+  && LEVELS.dropDepth.every((v, i) => i === 0 || v > LEVELS.dropDepth[i - 1]),
+  `${LEVELS.dropDepth[0]} → ${LEVELS.dropDepth[20]}`);
 
 // 等级越高越强，不能出现"升了一级反而变差"
 const nonMono = ROWS.filter((k) => LEVELS[k].some((v, i) => i > 0 && v < LEVELS[k][i - 1]));
 check('A4 每条曲线单调不减（升级不会变成削弱）',
-  nonMono.length === 0, nonMono.length ? '倒退：' + nonMono.join(',') : '13 条全部单调');
+  nonMono.length === 0, nonMono.length ? '倒退：' + nonMono.join(',') : `${ROWS.length} 条全部单调`);
 
 const costBad = [];
 for (const k of UPGRADE_ORDER) {
+  const top = maxLvOf(k);
   if (upgradeCost(k, 0) !== UPGRADES[k].base) costBad.push(k + ':Lv0≠base');
-  for (let l = 1; l < MAX_LEVEL; l++) {
+  for (let l = 1; l < top; l++) {
     if (!(upgradeCost(k, l) > upgradeCost(k, l - 1))) costBad.push(`${k}:Lv${l} 没变贵`);
   }
-  if (upgradeCost(k, MAX_LEVEL) !== Infinity) costBad.push(k + ':满级还能买');
+  // ⚠ 满级判断要用**该项自己的上限**：一次性工具（绞盘）只到 Lv1，
+  //   拿 MAX_LEVEL 去比会让它在 lv=1 时还算"能买"（价格 Infinity，按钮永远点不动）。
+  if (upgradeCost(k, top) !== Infinity) costBad.push(k + ':满级还能买');
 }
-check('A5 升级成本随等级严格递增、Lv0 = base、满级为 Infinity',
-  costBad.length === 0, costBad.join(',') || `GROWTH=${GROWTH} · 鱼线 150→700→226527`);
+check('A5 升级成本随等级严格递增、Lv0 = base、满级为 Infinity（上限走 maxLvOf）',
+  costBad.length === 0, costBad.join(',') || `GROWTH=${GROWTH} · 鱼线 150→700→226527 · 绞盘 ${upgradeCost('winch', 0)} 一次买断`);
 
 check('A6 lvAt 对残缺/越界等级给出有限值（NaN 会静默毁掉物理）',
-  lvAt('ascendSpeed', undefined) === 240 && lvAt('creelLimit', -5) === 8
-  && lvAt('maxDepth', 999) === 2200 && lvAt('gunPower', 1e9) === 3.8,
-  `undefined→${lvAt('ascendSpeed', undefined)} / −5→${lvAt('creelLimit', -5)} / 999→${lvAt('maxDepth', 999)}`);
+  lvAt('dropDepth', undefined) === 80 && lvAt('creelLimit', -5) === 8
+  && lvAt('maxDepth', 999) === 2200 && lvAt('bait', 1e9) === 100,
+  `undefined→${lvAt('dropDepth', undefined)} / −5→${lvAt('creelLimit', -5)} / 999→${lvAt('maxDepth', 999)}`);
 
 const tierSet = new Set(UPGRADE_ORDER.map((k) => UPGRADES[k].tier));
-check('A7 11 项升级齐全、分 3 个梯度、都有分层与图标键',
-  UPGRADE_ORDER.length === 11 && tierSet.size === 3
+check('A7 升级项齐全、分 3 个梯度、都有分层与图标键',
+  UPGRADE_ORDER.length === Object.keys(UPGRADES).length && tierSet.size === 3
   && UPGRADE_ORDER.every((k) => UPGRADES[k] && UPGRADES[k].icon && UPGRADES[k].name),
   `${UPGRADE_ORDER.length} 项 · 梯度 ${[...tierSet].join('/')}`);
+
+// v0.5 新增：一次性工具（绞盘）。它没有等级曲线，所以"能不能再买"完全由 maxLvOf 决定。
+const oneShots = UPGRADE_ORDER.filter((k) => UPGRADES[k].oneShot);
+check('A7b 一次性工具（oneShot）上限为 1、有 base 价格、且不参与等级曲线',
+  oneShots.length >= 1
+  && oneShots.every((k) => maxLvOf(k) === 1 && UPGRADES[k].base > 0)
+  && oneShots.every((k) => !ROWS.some((r) => r === k)),
+  `${oneShots.join(',')} · 上限 ${oneShots.map((k) => maxLvOf(k)).join(',')} · 价格 ${oneShots.map((k) => UPGRADES[k].base).join(',')}`);
 
 check('A8 MAP_LEVEL_CAP 是本图的等级闸门（当前单地图 = 20）',
   Array.isArray(MAP_LEVEL_CAP) && C.levelCapForMap(0) === MAP_LEVEL_CAP[0]
   && C.levelCapForMap(99) === MAP_LEVEL_CAP[MAP_LEVEL_CAP.length - 1],
   `MAP_LEVEL_CAP=[${MAP_LEVEL_CAP}] · 第 0 张=${C.levelCapForMap(0)}`);
+
+// ── A9 夹具完整性门禁（把 `.dev/fixtures.mjs` 的承诺变成一条会挂的断言）──
+/**
+ * `fixtures.mjs` 的注释里写着"门禁：verify7 的 A9 会扫所有 `.dev/**\/*.mjs`"，
+ * 但**这条断言一直没写** —— 于是 verify5 的 `levels` 夹具在手写列表里烂了两个版本
+ * （还留着 v0.5 已经删掉的 power / insurance / sonar / rig 四个键）。
+ *
+ * 规则：任何 `levels: {` 字面量必须满足其一，否则挂掉 ——
+ *   ① `levels: levelsOf({...})`（键集跟着 `UPGRADE_ORDER` 现铺，推荐写法）
+ *   ② 行内含展开 `...`（叠加在完整夹具之上，比如 `{ ...base.levels, x: 1 }`）
+ *   ③ 带 `@partial-save` 标记（**故意残缺**：抗残缺存档测试要用）
+ *
+ * 为什么值得一条断言：漏键的症状是**不报错、不闪退，只是鱼再也钓不上来**
+ * （`lvAt` 拿到 `undefined` 会钳到 0，NaN 顺着物理链污染）。这坑踩过两次，
+ * 排查成本极高，所以宁可让它在回归里挂掉。
+ */
+const FIXTURE_SKIP_FILES = new Set([
+  // C4：verify.mjs 是迭代 2 的基线，从 v0.4 起就坏了（引用已删除的 `g.blast`），
+  // 已明确标成"已失效、不参与回归"（STRUCTURE.md §5）。不修它，也不扫它。
+  path.resolve('.dev/verify.mjs'),
+]);
+function scanFixtureLiterals() {
+  const bad = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        // 跳过浏览器 profile / 缓存目录：几万个小文件，而且里面是**旧代码的副本**，
+        // 扫它们既慢又会报一堆假阳性。
+        if (/^(profile-|shots-|\.chrome)/.test(e.name)) continue;
+        walk(p);
+        continue;
+      }
+      if (!e.name.endsWith('.mjs') || FIXTURE_SKIP_FILES.has(p)) continue;
+      const lines = fs.readFileSync(p, 'utf8').split('\n');
+      lines.forEach((l, i) => {
+        if (!/(^|[^\w.])levels\s*:\s*\{/.test(l)) return;
+        // 注释行不算（比如本断言自己的说明文字里就有 `levels: {` 这个片段）
+        if (/^\s*(\/\/|\*|\/\*)/.test(l)) return;
+        if (l.includes('...')) return;                       // ② 叠在完整夹具上
+        if (/@partial-save/.test(l + (lines[i - 1] || ''))) return;   // ③ 故意残缺
+        bad.push(`${path.relative('.', p).replace(/\\/g, '/')}:${i + 1}  ${l.trim().slice(0, 64)}`);
+      });
+    }
+  };
+  walk(path.resolve('.dev'));
+  return bad;
+}
+const fixtureBad = scanFixtureLiterals();
+check('A9 所有 .dev 脚本的 levels 夹具都从 UPGRADE_ORDER 现铺（不漏键、不留已删除的项）',
+  fixtureBad.length === 0,
+  fixtureBad.length ? `${fixtureBad.length} 处手写：${fixtureBad.slice(0, 3).join(' | ')}` : '扫过全部脚本，0 处手写');
 
 // ═══════════════════════════════════════════════════════════
 // 浏览器部分
@@ -219,25 +279,50 @@ try {
   const shop = J(await ev(`JSON.stringify((()=>{
     const items = [...document.querySelectorAll('#pApp .item')];
     const heads = [...document.querySelectorAll('#pApp .tier-h')].map(e=>e.textContent);
+    const cfg = window.__cfg;
+    // 一次性工具（绞盘）没有等级曲线：不画进度条、也没有「当前 → 下一级」。
+    // 所以 B2/B3 的分母不是"全部项"，而是**走等级曲线的那几项**。
+    const curveKeys = cfg.UPGRADE_ORDER.filter(k => !cfg.UPGRADES[k].oneShot);
+    const curveItems = items.filter(i => !i.querySelector('.lv').textContent.includes('拥有'));
+    // v0.7 第三批：锁定的项（首图的鱼护 / 鱼饵 / 绞盘）是**暗行** ——
+    // 不画进度条、不写「当前 → 下一级」，改成一行「待解锁」提示。
+    // 所以 B2/B3 的分母进一步缩小成"开架曲线项"，锁定项单独断言。
+    const lockedItems = items.filter(i => i.classList.contains('locked-row'));
+    const openCurve = curveItems.filter(i => !i.classList.contains('locked-row'));
     return {
-      n: items.length,
-      heads,
-      pipsPerItem: items.map(i=>i.querySelectorAll('.pips i').length),
+      n: items.length, total: cfg.UPGRADE_ORDER.length,
+      curveN: curveItems.length, curveTotal: curveKeys.length,
+      lockedN: lockedItems.length,
+      openCurveN: openCurve.length,
+      lockHints: lockedItems.filter(i => i.querySelector('.lock-hint')).length,
+      // v0.7：进度条只画**本图这一段**（首图 = MAP_LEVEL_CAP[0] 格），不再画满 20 格
+      segExpect: cfg.MAP_LEVEL_CAP[0],
+      heads, tierTotal: new Set(cfg.UPGRADE_ORDER.map(k => cfg.UPGRADES[k].tier)).size,
+      pipsPerItem: openCurve.map(i=>i.querySelectorAll('.pips i').length),
+      lockedPips: lockedItems.map(i=>i.querySelectorAll('.pips i').length),
+      pipsOnOneShot: items.filter(i => i.querySelector('.lv').textContent.includes('拥有'))
+        .map(i => i.querySelectorAll('.pips i').length),
       icons: items.filter(i=>i.querySelector('.icon svg')).length,
-      nx: items.filter(i=>/→/.test(i.querySelector('.ds').textContent)).length,
+      nx: openCurve.filter(i=>/→/.test(i.querySelector('.ds').textContent)).length,
+      lockedNx: lockedItems.filter(i=>/→/.test(i.querySelector('.ds').textContent)).length,
       lvText: items[0].querySelector('.lv').textContent.trim(),
       firstVal: items[0].querySelector('.nx').textContent.trim(),
     };
   })())`));
 
-  check('B1 商店列出 11 项升级，并按 3 个梯度分组',
-    shop.n === 11 && shop.heads.length === 3, `${shop.n} 项 · 标题 ${JSON.stringify(shop.heads)}`);
-  check('B2 每项都是 20 格进度条（5 颗点在这个宽度里会糊成一条线）',
-    shop.pipsPerItem.length === 11 && shop.pipsPerItem.every((x) => x === 20),
-    `每项 ${shop.pipsPerItem[0]} 格`);
-  check('B3 每项都有内联 SVG 图标 + 「当前 → 下一级」数值文案',
-    shop.icons === 11 && shop.nx === 11,
-    `${shop.icons}/11 有图标 · ${shop.nx}/11 有 → · 例：${shop.lvText} ${shop.firstVal}`);
+  check('B1 商店列出全部升级项，并按梯度分组（项数从 config 现取）',
+    shop.n === shop.total && shop.heads.length === shop.tierTotal,
+    `${shop.n} 项（应 ${shop.total}）· 梯度 ${shop.heads.length}/${shop.tierTotal} · 标题 ${JSON.stringify(shop.heads)}`);
+  check('B2 开架曲线项的进度条格数 = 本图开放的段数；锁定的项不画条、改画「待解锁」提示（v0.7 第三批）',
+    shop.pipsPerItem.length === shop.openCurveN
+    && shop.pipsPerItem.every((x) => x === shop.segExpect)
+    && shop.lockedPips.every((x) => x === 0)
+    && shop.lockHints === shop.lockedN
+    && shop.pipsOnOneShot.every((x) => x === 0),
+    `开架曲线项 ${shop.pipsPerItem.length}/${shop.openCurveN} 各 ${shop.pipsPerItem[0]} 格 · 锁定 ${shop.lockedN} 项（提示 ${shop.lockHints}）· 一次性项格数 ${JSON.stringify(shop.pipsOnOneShot)}`);
+  check('B3 每项都有内联 SVG 图标；开架曲线项都有「当前 → 下一级」，锁定的项不泄数值（v0.7 第三批）',
+    shop.icons === shop.total && shop.nx === shop.openCurveN && shop.lockedNx === 0,
+    `${shop.icons}/${shop.total} 有图标 · 开架 ${shop.nx}/${shop.openCurveN} 有 → · 锁定项带 → 的 ${shop.lockedNx} · 例：${shop.lvText} ${shop.firstVal}`);
 
   // 分段封顶：把本图的闸门临时压到 3
   const cap = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
@@ -267,7 +352,76 @@ try {
   check('B5 金币不足时买不起（灰掉），金币够时亮起',
     poor.poor === true && poor.rich === false && poor.richAfford === true,
     `没钱 disabled=${poor.poor} → 有钱 disabled=${poor.rich}（afford=${poor.richAfford}）`);
-  await shot('01-shop-11');
+
+  // ── B10/B11 分段解锁（A1）：`UPGRADES[*].unlockMap` =「拿到某张图的许可证才上架」──
+  // 在 v0.6 之前这个字段全是 null，`ui.js` 的「未解锁」分支**写好了却从没触发过** ——
+  // 也就是说 A1 这条风险此前既没有实现、也没有断言守着。
+  const lockUi = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
+    const read = () => { const b=document.querySelector('#pApp .buy[data-k="winch"]');
+      return { text: b.textContent.trim(), disabled: b.disabled, cls: b.className }; };
+    g.save.coins = 99999999; g.save.levels.winch = 0;
+    // v0.7 第二批：解锁判定改成"到没到过那张图"（许可证退役）——
+    // 所以这里用"没有海图 / 没有船"来模拟"还没去过极地"。
+    g.save.chart = false; g.save.boats = { owned: [], current: null };
+    g.save.licenses = []; g.ui.refreshApp();
+    const locked = read();
+    // 老存档的兜底：**已经买过绞盘**、但还没拿到极地许可证
+    g.save.levels.winch = 1; g.ui.refreshApp();
+    const owned = read();
+    g.save.levels.winch = 0;
+    g.save.chart = true; g.save.boats = { owned: ['golden'], current: 'golden' };
+    g.ui.refreshApp();
+    const open = read();
+    const u = cfg.UPGRADES.winch;
+    g.save.licenses = [];
+    return { locked, owned, open, price: u.base, unlockMap: u.unlockMap };})())`));
+  check('B10 分段解锁：没有许可证时该项「未解锁」且不可点，拿到之后回到可购买状态',
+    lockUi.locked.text === '未解锁' && lockUi.locked.disabled === true
+    && lockUi.open.disabled === false && !/lock/.test(lockUi.open.cls)
+    && new RegExp(String(lockUi.price).replace(/(\d)(?=(\d{3})+$)/g, '$1,?')).test(lockUi.open.text),
+    `未持有「${lockUi.unlockMap}」时「${lockUi.locked.text}」(disabled=${lockUi.locked.disabled})`
+    + ` · 持有后「${lockUi.open.text}」(disabled=${lockUi.open.disabled})`);
+  check('B11 老存档兜底：已买过绞盘但还没拿到极地许可证 → 显示「已拥有」而不是「未解锁」',
+    lockUi.owned.text === '已拥有' && lockUi.owned.disabled === true,
+    `「${lockUi.owned.text}」disabled=${lockUi.owned.disabled}`);
+
+  // ── B12 首图是"新手图"（v0.7）───────────────────────────────
+  // 首图货架 = 4 项基础；鱼护 / 鱼饵 / 绞盘都要换图之后才上架。
+  // 这条守的是"分段解锁的名单本身"：以后谁把某一项的 unlockMap 去掉/改了，这里会挂。
+  const shelf = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
+    g.save.licenses = []; g.save.coins = 9999999; g.save.levels.winch = 0;
+    g.save.chart = false; g.save.boats = { owned: [], current: null };
+    g.ui.refreshApp();
+    const locked = [...document.querySelectorAll('#pApp .buy.lock')].map(b=>b.dataset.k).sort();
+    const want = cfg.UPGRADE_ORDER.filter(k => cfg.UPGRADES[k].unlockMap).sort();
+    const open = cfg.UPGRADE_ORDER.filter(k => !cfg.UPGRADES[k].unlockMap);
+    return { locked, want, open,
+      segPips: document.querySelector('#pApp .item .pips') ? document.querySelector('#pApp .item .pips').children.length : -1,
+      lvText: document.querySelector('#pApp .item .lv').textContent.trim(),
+      note: document.querySelector('#pApp .p-note').textContent.replace(/\\s+/g,' ').trim() };
+  })())`));
+  check('B12 首图（新手图）只上架 4 项基础：带 unlockMap 的 3 项全部锁着、进度条只画本图段',
+    shelf.locked.join(',') === shelf.want.join(',') && shelf.locked.length === 3
+    && shelf.open.length === 4 && shelf.segPips === 5 && /^Lv\.0 \/ 5$/.test(shelf.lvText)
+    && !/20/.test(shelf.note),
+    `锁住 ${shelf.locked.join('/')} · 开架 ${shelf.open.join('/')} · 进度条 ${shelf.segPips} 格 · 标签「${shelf.lvText}」· 说明「${shelf.note}」`);
+  await shot('01-shop-rows');
+  // 出图核对：**把商店切回"未解锁"那一版再截图** —— B10 读完之后 DOM 停在"已解锁"态，
+  //   不切的话截出来的是 9,000 那一行，等于没验。
+  //   断言只能证明它不可点，证明不了"它看起来不像是坏了"（没有价格的按钮最容易排版翻车）。
+  await ev(`(()=>{const g=window.__game; g.save.licenses=[]; g.save.levels.winch=0; g.ui.refreshApp(); return 'ok';})()`);
+  await rafWait(150);
+  // ⚠ 滚动容器在历史上换过（`#pApp` 本体 ↔ 内层 `.p-app-body`），
+  //   两个都设一遍最省事 —— 只设错的那个的话图看起来"没动"，白跑一轮。
+  await ev(`(()=>{const a=document.getElementById('pApp'); const b=document.querySelector('#pApp .p-app-body');
+    if(a) a.scrollTop=99999; if(b) b.scrollTop=99999; return 'ok';})()`);
+  await rafWait(200);
+  await shot('01b-shop-winch-locked');
+  await ev(`(()=>{const a=document.getElementById('pApp'); const b=document.querySelector('#pApp .p-app-body');
+    if(a) a.scrollTop=0; if(b) b.scrollTop=0; return 'ok';})()`);
+  // 之后 B6 要量"最长的那一行"，所以把绞盘**放回货架**（有价格 + 有数值文案才量得准）
+  await ev(`(()=>{const g=window.__game; g.save.chart=true; g.save.boats={owned:['golden'],current:'golden'}; g.ui.refreshApp(); return 'ok';})()`);
+  await rafWait(150);
 
   // 商店每一行的「说明 · 当前 → 下一级」都要能塞进一行。
   // 折行不只是难看：那一行会比旁边高出 16px，整列看着像排版坏了。
@@ -308,7 +462,9 @@ try {
     let minAvail = 1e9, maxNeed = 0, sample = '', tight = null;
     g.save.coins = 99999999;
     for (let lv = 0; lv < cfg.MAX_LEVEL; lv++) {
-      for (const k of cfg.UPGRADE_ORDER) g.save.levels[k] = lv;
+      // ⚠ 一次性工具（绞盘）只到 Lv1：直接写 19 会让 upgradeCost 返回 Infinity，
+      //   fmtCost(Infinity) 会把按钮文案写成 NaN。所以按**该项自己的上限**钳一次。
+      for (const k of cfg.UPGRADE_ORDER) g.save.levels[k] = Math.min(lv, cfg.maxLvOf(k));
       g.applyUpgrades(); g.ui.refreshApp();
       const rows = [...document.querySelectorAll('#pApp .item')];
       rows.forEach((r, i) => {
@@ -325,7 +481,9 @@ try {
           tight = { k: k, lv: lv, need: need, avail: avail, gap: avail - need };
         }
         if (lv === 19 && k === 'line') sample = ds.textContent.trim();
-        heights.add(Math.round(r.getBoundingClientRect().height));
+        // 行高一致性只对**走等级曲线**的行成立：一次性工具没有进度条，
+        // 天生比别的行矮一截（那是它的结构，不是排版坏了）。
+        if (!cfg.UPGRADES[k].oneShot) heights.add(Math.round(r.getBoundingClientRect().height));
         if (need > avail + 0.5) {
           over.push({ k: k, lv: lv, need: need, avail: avail, text: ds.textContent.trim() });
         }
@@ -367,111 +525,148 @@ try {
     rowFit.probeWorks === true,
     `探针文本需 ${rowFit.probeNeed}px > 可用 ${rowFit.probeAvail}px`);
 
-  check('B6 商店 11 行在 0~19 级全程都不折行（逐级真实布局测量）',
+  check('B6 商店全部行在 0~19 级全程都不折行（逐级真实布局测量）',
     rowFit.over.length === 0,
     rowFit.over.length
       ? rowFit.over.map((x) => `${x.k} Lv${x.lv} 需 ${x.need} > 可用 ${x.avail}px「${x.text}」`).join(' / ')
       : `最紧的一行 ${rowFit.tight.k} Lv${rowFit.tight.lv}：需 ${rowFit.tight.need} / 可用 ${rowFit.tight.avail}px（余量 ${rowFit.tight.gap}px）· 例「${rowFit.sample}」`);
-  check('B7 11 行行高全程一致（折行的那一行会高出 16px，一眼看出排版坏了）',
+  check('B7 全部行行高全程一致（折行的那一行会高出 16px，一眼看出排版坏了）',
     rowFit.heightSpread === 0, `行高 ${JSON.stringify(rowFit.heights)}`);
   check('B9 商店一行不会横向溢出面板（.item 宽度 ≤ 列表宽度）',
     rowFit.widest <= rowFit.listW,
     `.item 最宽 ${rowFit.widest}px · .shop-list ${rowFit.listW}px`);
 
   // ═════════════════════════════════════════════════════════
-  console.log('\n── C 6 个新升级项真的生效 ──');
+  console.log('\n── C 各项升级真的作用到 game 实例上 ──');
   // ═════════════════════════════════════════════════════════
-  const newOnes = J(await ev(`JSON.stringify((()=>{const g=window.__game;
+  const landed = J(await ev(`JSON.stringify((()=>{const g=window.__game;
     g.closePhone();
-    const out = {};
     const set = (k, v) => { g.save.levels[k] = v; g.applyUpgrades(); };
-    const KEYS = ['winch','creel','insurance','rig','sonar','bait'];
     // 直接读 game 实例上落地的字段，而不是再去 config 里算一遍 ——
     // 这样测的是"升级真的作用到游戏上了"，而不是"config 的公式算对了"。
     const snap = () => ({
-      winch: g.ascendSpeed, creel: g.creelLimit, fine: g.pufferPenalty,
-      bump: g.bumpRadius, sonar: g.sonarPct, bait: g.baitBonus,
+      drop: g.dropMax, creel: g.creelLimit, bait: g.baitBonus,
+      sink: g.descendSpeed, asc: g.ascendSpeed, bump: g.bumpRadius, fine: g.pufferPenalty,
     });
-    for (const k of KEYS) set(k, 0);
-    out.base = snap();
-    for (const k of KEYS) set(k, 20);
-    out.max = snap();
-    out.finite = Object.values(out.base).concat(Object.values(out.max))
-      .every((v) => Number.isFinite(v));
-    for (const k of KEYS) set(k, 0);
+    // ⚠ 鱼线要拉到 Lv4（840m），否则"70% 上限"会先把铅坠钳住，
+    //   测出来的是 224 而不是铅坠等级真正允许的深度 —— 那是两条不同的断言。
+    set('line', 4);
+    for (const k of ['sinker','creel','bait']) set(k, 0);
+    const base = snap();
+    for (const k of ['sinker','creel','bait']) set(k, 20);
+    const max = snap();
+    // 铅坠拉满、但鱼线只有 Lv0（320m）时，上限必须被 70% 钳到 224
+    set('sinker', 20); set('line', 0);
+    const clamped = snap();
+    for (const k of ['sinker','creel','bait']) set(k, 0);
+    set('line', 0);
     g.showIdle();
-    return out;})())`));
+    return { base, max, clamped };})())`));
 
-  check('C1 绞盘：上拉速度 240 → 480 m/s（v0.2 世界 ×2）',
-    newOnes.base.winch === 240 && newOnes.max.winch === 480,
-    `${newOnes.base.winch} → ${newOnes.max.winch}`);
+  check('C1 铅坠：直达深度上限 80 → 588（Lv20 的 1540 被"鱼线 840 × 70%"钳住）',
+    landed.base.drop === 80 && landed.max.drop === Math.round(840 * 0.7),
+    `${landed.base.drop} → ${landed.max.drop}m（鱼线 840 的 70% = ${Math.round(840 * 0.7)}）`);
+  check('C1b 换回浅图 / 短鱼线时上限跟着缩：鱼线 Lv0（320m）→ 铅坠满级也只能跳 224m',
+    landed.clamped.drop === Math.round(320 * 0.7),
+    `钳后上限 ${landed.clamped.drop}m（320 × 70%）`);
   check('C2 鱼护：一竿串鱼上限 8 → 60 条',
-    newOnes.base.creel === 8 && newOnes.max.creel === 60,
-    `${newOnes.base.creel} → ${newOnes.max.creel} 条`);
-  check('C3 保险：扣钱鱼罚款 30 → 6（减免 80%）',
-    newOnes.base.fine === 30 && newOnes.max.fine === 6,
-    `${newOnes.base.fine} → ${newOnes.max.fine}`);
-  // ⚠ 不要写 `=== 1.68`：`4.2 * (1 - 60/100)` 在 IEEE754 下是 1.6800000000000002。
-  //   这里比的是"减免比例"，顺带把浮点误差挡在外面，报错信息也更有用。
-  check('C4 加固：下潜撞鱼判定半径 8.4 → 3.36（减免 60%）',
-    Math.abs(newOnes.base.bump - 8.4) < 1e-9 && Math.abs(newOnes.max.bump - 3.36) < 1e-9,
-    `${newOnes.base.bump} → ${newOnes.max.bump}（实际减免 ${(100 * (1 - newOnes.max.bump / newOnes.base.bump)).toFixed(0)}%）`);
-  check('C5 声呐：0 → 100%（深度尺上的探测范围）',
-    newOnes.base.sonar === 0 && newOnes.max.sonar === 1,
-    `${newOnes.base.sonar} → ${newOnes.max.sonar}`);
-  check('C6 鱼饵：0 → 100% 高价鱼权重加成',
-    newOnes.base.bait === 0 && newOnes.max.bait === 1,
-    `${newOnes.base.bait} → ${newOnes.max.bait}`);
-  check('C7 六项全部落到有限数（没有一项算出 NaN）', newOnes.finite === true, '');
+    landed.base.creel === 8 && landed.max.creel === 60,
+    `${landed.base.creel} → ${landed.max.creel} 条`);
+  check('C3 鱼饵：0 → 100% 高价鱼权重加成',
+    landed.base.bait === 0 && landed.max.bait === 1,
+    `${landed.base.bait} → ${landed.max.bait}`);
+  // v0.5 删掉的那四项机制必须**彻底不再可改**：把相关升级项拉满，这四个量一动不动。
+  // 这条盯的是"删干净"—— 只删 UI 不删生效路径的话，老存档里的等级还会继续偷偷影响手感。
+  check('C4 已删除的四项机制彻底失效：下潜/收线速度、撞鱼判定、罚款全是常量',
+    landed.base.sink === 100 && landed.max.sink === 100
+    && landed.base.asc === 240 && landed.max.asc === 240
+    && Math.abs(landed.base.bump - 8.4) < 1e-9 && Math.abs(landed.max.bump - 8.4) < 1e-9
+    && landed.base.fine === 30 && landed.max.fine === 30,
+    `下潜 ${landed.base.sink}/${landed.max.sink} · 收线 ${landed.base.asc}/${landed.max.asc} · 撞鱼 ${landed.base.bump}/${landed.max.bump} · 罚款 ${landed.base.fine}/${landed.max.fine}`);
+  check('C5 全部落到有限数（没有一项算出 NaN）',
+    [...Object.values(landed.base), ...Object.values(landed.max)].every((v) => Number.isFinite(v)), '');
 
-  // 绞盘真的让上升更快：把钩子放到固定的 −60m 再强制上升，量同一段距离的帧数。
-  // （不要用"抛竿 → 等 → 收线"那套：上升起点会随触底自动收线的时机漂移，
-  //   量出来的帧数没有可比性 —— 之前就在这里量出过"Lv20 只用 1 帧"的假数据。）
-  const winchFrames = J(await ev(`JSON.stringify((()=>{const g=window.__game;
-    const run = (lv) => {
-      g.save.levels.winch = lv; g.applyUpgrades();
+  // 铅坠·直达深度：端到端 —— 开竿后钩子应该**直接出现在目标深度**
+  const drop = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
+    g.save.levels.line = 4; g.save.levels.sinker = 20; g.applyUpgrades();   // 线 840 → 上限 588
+    const cap = g.dropMax;
+    const cast = (on, want) => {
+      g.save.drop = { on, depth: want };
+      g.showIdle(); g.enterDescend();
+      let guard=0; while (g.castAir && guard++<400) window.step(1);
+      return { y: +(-g.hook.y).toFixed(2), used: +g.dropUsed.toFixed(2), grace: +g.dropGraceT.toFixed(2) };
+    };
+    const off = cast(false, 400);
+    const on = cast(true, 400);
+    const over = cast(true, 99999);        // 超过上限 → 应被钳到 cap
+    const under = cast(true, 1);           // 低于下限 → 应被钳到 DROP_MIN_DEPTH
+    g.save.drop = { on: false, depth: 0 }; g.save.levels.sinker = 0; g.applyUpgrades(); g.showIdle();
+    return { cap, off, on, over, under, min: cfg.TUNING.DROP_MIN_DEPTH };})())`));
+  check('C6 关掉直达时钩子仍从水面开始下潜（这一竿没跳过任何深度）',
+    drop.off.used === 0 && Math.abs(drop.off.y) < 40,
+    `钩深 ${drop.off.y}m · dropUsed=${drop.off.used}`);
+  check('C7 打开直达后钩子直接出现在目标深度，并拿到落地缓冲',
+    Math.abs(drop.on.y - 400) < 0.01 && Math.abs(drop.on.used - 400) < 0.01 && drop.on.grace > 0,
+    `钩深 ${drop.on.y}m · dropUsed=${drop.on.used} · 缓冲 ${drop.on.grace}s`);
+  check('C8 目标深度被钳进 [DROP_MIN_DEPTH, 上限]（写 99999 和写 1 都越界不了）',
+    Math.abs(drop.over.y - drop.cap) < 0.01 && Math.abs(drop.under.y - drop.min) < 0.01,
+    `上限 ${drop.cap}m（写 99999 → ${drop.over.y}）· 下限 ${drop.min}m（写 1 → ${drop.under.y}）`);
+
+  // 绞盘·快速回收：没买 → 按不动；买了 → 同一段上升耗时 ≈ 1/3；且本竿只能按一次。
+  //
+  // ⚠ 用"把钩子放到固定的 −120m 再强制上升、量帧数"的老办法（不要走"抛竿 → 等 → 收线"：
+  //   上升起点会随触底自动收线的时机漂移，量出来的帧数没有可比性）。
+  const fast = J(await ev(`JSON.stringify((()=>{const g=window.__game;
+    const measure = (owned, use) => {
+      g.save.levels.winch = owned; g.applyUpgrades();
       g.showIdle(); g.enterDescend();
       let guard=0; while (g.castAir && guard++<400) window.step(1);
       g.reelPre = 0; g.state = 'ascend';
       g.hook.setPosition(0, -120); g.hook.y = -120;
+      g.fastReel = false;
+      const first = use ? g.fastReelNow() : null;
+      const second = use ? g.fastReelNow() : null;   // 第二次应被拒（本竿只能按一次）
       let n = 0;
       while (g.state === 'ascend' && n++ < 3000) window.step(1);
-      return n;
+      return { n, first, second, used: g.fastReel };
     };
-    const a = run(0), b = run(20);
+    const denied = measure(false, true);   // 没买绞盘：fastReelNow() 应返回 false
+    const slow = measure(true, false);
+    const fast = measure(true, true);
+    // 按钮显隐：只有买了绞盘、且真的进入上升阶段才出现
+    g.save.levels.winch = 0; g.applyUpgrades();
+    g.showIdle(); g.state = 'descend'; g.reelPre = 0; g._beginAscend();
+    const btnNo = document.getElementById('fastReelBtn').classList.contains('on');
+    g.save.levels.winch = 1; g.applyUpgrades();
+    g.state = 'descend'; g.reelPre = 0; g._beginAscend();
+    const btnYes = document.getElementById('fastReelBtn').classList.contains('on');
     g.save.levels.winch = 0; g.applyUpgrades(); g.showIdle();
-    return { slow: a, fast: b };})())`));
-  const ratio = winchFrames.fast / winchFrames.slow;
-  check('C8 绞盘满级后同一段（−120m → 水面）上升耗时减半',
-    winchFrames.slow >= 25 && Math.abs(ratio - 0.5) < 0.12,
-    `${winchFrames.slow} 帧 → ${winchFrames.fast} 帧（比值 ${ratio.toFixed(2)}，理论 0.50）`);
+    return { denied, slow, fast, btnNo, btnYes };})())`));
+  check('C9 没买绞盘时「快速回收」无效：按钮不出现，调用也被拒',
+    fast.btnNo === false && fast.denied.first === false && fast.denied.used === false,
+    `按钮 on=${fast.btnNo} · 调用返回 ${fast.denied.first} · fastReel=${fast.denied.used}`);
+  check('C10 买了绞盘后按钮出现，按一下同一段上升耗时 ≈ 1/3',
+    fast.btnYes === true && fast.slow.n >= 25
+    && Math.abs(fast.fast.n / fast.slow.n - 1 / 3) < 0.1,
+    `按钮 on=${fast.btnYes} · ${fast.slow.n} 帧 → ${fast.fast.n} 帧（比值 ${(fast.fast.n / fast.slow.n).toFixed(2)}，理论 0.33）`);
+  check('C11 快速回收每竿只能按一次（第二次被拒，不能一路狂按）',
+    fast.fast.first === true && fast.fast.second === false,
+    `第一次 ${fast.fast.first} · 第二次 ${fast.fast.second}`);
 
-  // 声呐：探测带出现 + 带内有刻度；0 级时整层隐藏
-  const sonar = J(await ev(`JSON.stringify((()=>{const g=window.__game; const ui = g.ui;
-    const probe = () => ({
-      on: document.querySelector('#ruler .sonar').classList.contains('on'),
-      bandH: document.querySelector('#ruler .s-band').style.height,
-      blips: document.querySelectorAll('#ruler .s-blip').length,
-      hot: document.querySelectorAll('#ruler .s-blip.hot').length,
-    });
-    ui.setSonar(0);
-    ui.setDepth(200, 420, 200);
-    ui.setSonarBlips([{d:190,hot:false},{d:205,hot:true}]);
-    const off = probe();
-    ui.setSonar(1);
-    ui.setDepth(200, 420, 200);
-    // 带内两条（190/205）、带外两条（30 / 420）
-    ui.setSonarBlips([{d:30,hot:false},{d:190,hot:false},{d:205,hot:true},{d:420,hot:true}]);
-    const on = probe();
-    return { off, on };})())`));
-  check('C9 声呐 0 级时深度尺上没有探测带（不占视觉）',
-    sonar.off.on === false && sonar.off.blips === 0, JSON.stringify(sonar.off));
-  check('C10 声呐满级出现探测带，且只画带内的鱼（带外 2 条被滤掉，值钱的标金色）',
-    sonar.on.on === true && sonar.on.blips === 2 && sonar.on.hot === 1
-    && parseFloat(sonar.on.bandH) > 10,
-    `带高 ${sonar.on.bandH} · 刻度 ${sonar.on.blips}（金 ${sonar.on.hot}）`);
-  await ev(`(()=>{const g=window.__game; g.ui.setSonar(g.sonarPct); return 'ok';})()`);
-  await shot('02-sonar');
+  // 声呐（v0.5 已随升级项一起移除）：深度尺上不该再有探测带的任何痕迹。
+  // 这条是"删干净"的另一半 —— C4 管的是数值不再生效，这里管的是 DOM 也不再存在。
+  const sonarGone = J(await ev(`JSON.stringify((()=>{
+    const r = document.getElementById('ruler');
+    return { sonar: r.querySelectorAll('.sonar').length,
+             band: r.querySelectorAll('.s-band').length,
+             blip: r.querySelectorAll('.s-blip').length,
+             hasMethod: typeof window.__game.ui.setSonar === 'function',
+             pct: window.__game.sonarPct };
+  })())`));
+  check('C12 声呐已彻底移除：深度尺上没有探测带 DOM，game 上也没有 sonarPct',
+    sonarGone.sonar === 0 && sonarGone.band === 0 && sonarGone.blip === 0
+    && sonarGone.hasMethod === false && sonarGone.pct === undefined,
+    `sonar=${sonarGone.sonar} band=${sonarGone.band} blip=${sonarGone.blip} setSonar=${sonarGone.hasMethod} sonarPct=${sonarGone.pct}`);
 
   // 鱼饵：直接量「本层最贵那条鱼的出现率」——这才是鱼饵承诺的东西。
   // （"全场平均身价"不是好指标：它天然被中层鱼稀释，满级也只有 +4~8%。）
@@ -542,36 +737,41 @@ try {
       g._catch(f);
       seq.push({ name: f.def.name, wasFirst, nowFirst: firstRow() });
     }
+    // v0.7：满员之后**不再挤掉任何一条** —— 池子有 12 条而上限 8 条，
+    //   所以"线上条数"应该正好停在上限，run.lost 必须是 0（旧口径这里会是 ≥ 4）。
     const escaped = pool.filter(f => f.immuneT > 0).length;
     const over = g.caught.length > g.creelLimit;
     const out = { limit: g.creelLimit, onLine: g.caught.length, lost: g.run.lost,
       rows: document.querySelectorAll('#catchList .row').length,
       count: document.getElementById('catchCount').textContent,
-      escaped, over,
-      firstWasReplaced: seq.length > 8 && seq[8].wasFirst !== seq[8].nowFirst,
+      escaped, over, autoFastReel: g.fastReel === true, fullDone: g._creelFullDone === true,
+      firstStillSame: seq.length > 8 && seq[8].wasFirst === seq[8].nowFirst,
       keptNames: g.caught.map(f=>f.def.name) };
     g.showIdle();
     return out;})())`));
-  check('C12 鱼护满了：挤掉最早那条（不是新鱼串不上），线长恒 ≤ 上限',
-    creel.onLine === creel.limit && creel.over === false && creel.lost >= 4,
-    `上限 ${creel.limit} · 线上 ${creel.onLine} · 挣脱 ${creel.lost}`);
-  check('C13 被挤掉的鱼回到水里并拿到免疫时间（不会被同一帧扫回来）',
-    creel.escaped >= 4, `带免疫的鱼 ${creel.escaped} 条`);
-  check('C14 渔获面板第一行随之下移，计数显示真实条数（不是被截断的行数）',
-    creel.firstWasReplaced === true && creel.rows === creel.onLine
-    && creel.count === String(creel.onLine),
-    `面板 ${creel.rows} 行 / 计数 ${creel.count} · 第一行已换人=${creel.firstWasReplaced}`);
+  check('C12 鱼护满了：**不再挤掉**最早那条，线上恒 = 上限、一条都没丢（v0.7 新口径）',
+    creel.onLine === creel.limit && creel.over === false && creel.lost === 0
+    && creel.firstStillSame === true,
+    `上限 ${creel.limit} · 线上 ${creel.onLine} · 丢失 ${creel.lost} · 第一行没换人=${creel.firstStillSame}`);
+  check('C13 满员 → 自动加速收线（每竿只触发一次，且不占绞盘那次手动机会）',
+    creel.autoFastReel === true && creel.fullDone === true && creel.escaped === 0,
+    `fastReel=${creel.autoFastReel} · 只触发一次=${creel.fullDone} · 被挤掉带免疫的 ${creel.escaped} 条`);
+  check('C14 面板行数 = 线上条数 = 计数（满员之后不再减行）',
+    creel.rows === creel.onLine && creel.count === String(creel.onLine),
+    `面板 ${creel.rows} 行 / 计数 ${creel.count}`);
 
   // ═════════════════════════════════════════════════════════
   console.log('\n── D 抗残缺存档 ──');
   // ═════════════════════════════════════════════════════════
   const legacy = J(await ev(`JSON.stringify((()=>{const g=window.__game;
-    // 模拟"只存了 v0.1 那 5 项"的旧存档 / 手写的残缺 levels
-    g.save.levels = { line:2, hook:1, sinker:1, power:2, lamp:1 };
+    // 模拟"只存了 v0.1 那几项"的旧存档 / 手写的残缺 levels。
+    // ⚠ 这里刻意**保留已经删掉的键**（power / sinker 之外的旧项）：
+    //   老存档里一定有它们，读档必须无视而不是炸掉。
+    g.save.levels = { line:2, hook:1, sinker:1, power:2, lamp:1, insurance:3, sonar:4, rig:5 };
     let err = '';
     try { g.applyUpgrades(); } catch (e) { err = e.message; }
     const keys = ['maxDepth','descendSpeed','ascendSpeed','creelLimit','bumpRadius',
-                  'pufferPenalty','sonarPct','baitBonus'];
+                  'pufferPenalty','baitBonus','dropMax'];
     const vals = {};
     for (const k of keys) vals[k] = Number.isFinite(g[k]) ? g[k] : String(g[k]);
     const hookR = Number.isFinite(g.hook.radius) ? g.hook.radius : String(g.hook.radius);
@@ -579,33 +779,54 @@ try {
     return { err, vals, hookR, lampR,
       allFinite: keys.every(k=>Number.isFinite(g[k])) && Number.isFinite(g.hook.radius)
                  && Number.isFinite(g.world.lampR) };})())`));
-  check('D1 只有旧 5 键的 levels 不会抛错，也不会把物理搞成 NaN',
+  check('D1 残缺 levels（含已删除项的键）不会抛错，也不会把物理搞成 NaN',
     legacy.err === '' && legacy.allFinite === true,
-    legacy.err || `line 2 → 鱼线 ${legacy.vals.maxDepth}m · 钩 ${legacy.hookR} · 灯 ${legacy.lampR}`);
-  check('D2 缺失的 6 项按 Lv0 兜底（绞盘 240 / 鱼护 8 / 罚款 30 / 声呐 0）',
+    legacy.err || `line 2 → 鱼线 ${legacy.vals.maxDepth}m · 钩 ${legacy.hookR} · 灯 ${legacy.lampR} · 直达上限 ${legacy.vals.dropMax}m`);
+  check('D2 缺失的项按 Lv0 / 常量兜底（收线 240 / 鱼护 8 / 罚款 30 / 下潜 100）',
     legacy.vals.ascendSpeed === 240 && legacy.vals.creelLimit === 8
-    && legacy.vals.pufferPenalty === 30 && legacy.vals.sonarPct === 0,
-    `绞盘 ${legacy.vals.ascendSpeed} · 鱼护 ${legacy.vals.creelLimit} · 罚款 ${legacy.vals.pufferPenalty} · 声呐 ${legacy.vals.sonarPct}`);
+    && legacy.vals.pufferPenalty === 30 && legacy.vals.descendSpeed === 100,
+    `收线 ${legacy.vals.ascendSpeed} · 鱼护 ${legacy.vals.creelLimit} · 罚款 ${legacy.vals.pufferPenalty} · 下潜 ${legacy.vals.descendSpeed}`);
 
   // 存档往返：读档会把缺失项补齐成 0，而不是 undefined
   const roundtrip = J(await ev(`JSON.stringify((()=>{
     localStorage.setItem('hooked.save.v3', JSON.stringify({
       coins: 500, bestDepth: 120, casts: 3,
-      levels: { line: 3, lamp: 2 }, codex: { sardine: { n: 2, best: 7 } } }));
+      levels: { line: 3, lamp: 2 },    // @partial-save —— 故意残缺，验的是"读档能把缺的补齐"
+      codex: { sardine: { n: 2, best: 7 } } }));
     return { saved: true };})())`));
   await send('Page.navigate', { url: URL });
-  await sleep(3200);
+  // ⚠ 不要用固定 sleep 收尾：页面重启 + 首帧渲染的时间在不同机器上差很多，
+  //   固定等待会偶发地读到"还没有 __game"的空页面（症状是整组 D 断言一起变 undefined）。
+  //
+  // ⚠⚠ 但**必须先让旧上下文死掉**再开始轮询。导航是异步的：`Page.navigate` 返回之后
+  //   旧页面还会短暂存活，此时 `window.__game` 仍然存在 —— 一上来就轮询会立刻"成功"，
+  //   然后在新页面还没启动的空窗期里去读，读到的全是 undefined。
+  //   （这个坑让 D3/D4 假 FAIL 了两轮，所以两段等待都留着。）
+  await sleep(1600);                       // ① 等旧上下文销毁 + 新文档开始加载
+  let booted = false;
+  for (let i = 0; i < 60; i++) {           // ② 再轮询到新页面真的起了 __game
+    await sleep(200);
+    if ((await ev('!!window.__game')) === true) { booted = true; break; }
+  }
+  await sleep(400);
+  // ⚠⚠ 重载会丢掉测试自己注入的 `window.__cfg`（它是脚本加的，不是页面加的）。
+  //   不重新注入的话，下面探针里的 `cfg.UPGRADE_ORDER` 会抛错 → ev 返回错误对象
+  //   → JSON.parse 失败 → J() 给出 {__bad}，所有字段一起变 undefined。
+  //   （这个坑让 D3/D4 连着假 FAIL 了三轮，教训是：**跨页面重载后所有测试注入都要重来一遍**。）
+  await ev(`(async()=>{ window.__cfg = await import('./src/config.js'); return 'ok'; })()`);
   const reloaded = J(await ev(`JSON.stringify((()=>{const g=window.__game;
     if (!g) return { err: 'no game' };
     const L = g.save.levels;
-    return { line: L.line, lamp: L.lamp, winch: L.winch, rig: L.rig,
-      nKeys: Object.keys(L).length,
+    const cfg = window.__cfg;
+    return { line: L.line, lamp: L.lamp, winch: L.winch,
+      nKeys: Object.keys(L).length, total: cfg.UPGRADE_ORDER.length,
       maxDepth: g.maxDepth, ascend: g.ascendSpeed, creel: g.creelLimit,
-      allKeysZero: ['winch','creel','insurance','sonar','bait','rig'].every(k=>L[k]===0) };})())`));
-  check('D3 旧存档读回后，6 个新等级字段被补齐为 0（不是 undefined）',
-    roundtrip.saved && reloaded.nKeys === 11 && reloaded.allKeysZero === true
-    && reloaded.ascend === 240 && reloaded.creel === 8,
-    `${reloaded.nKeys} 个等级键 · 绞盘 ${reloaded.ascend} · 鱼护 ${reloaded.creel}`);
+      allKeysZero: cfg.UPGRADE_ORDER.filter(k=>k!=='line'&&k!=='lamp').every(k=>L[k]===0),
+      noGhostKeys: !('power' in L) && !('insurance' in L) && !('sonar' in L) && !('rig' in L) };})())`));
+  check('D3 旧存档读回后，等级表按当前 UPGRADE_ORDER 重建（数量对、缺的补 0、已删的键不再出现）',
+    booted === true && roundtrip.saved && reloaded.nKeys === reloaded.total && reloaded.allKeysZero === true
+    && reloaded.noGhostKeys === true && reloaded.ascend === 240 && reloaded.creel === 8,
+    `${reloaded.nKeys}/${reloaded.total} 个等级键 · 已删键残留=${!reloaded.noGhostKeys} · 收线 ${reloaded.ascend} · 鱼护 ${reloaded.creel}`);
   check('D4 旧存档里已有的等级照常生效（鱼线 Lv3 → 710m）',
     reloaded.line === 3 && reloaded.maxDepth === 710, `Lv${reloaded.line} → ${reloaded.maxDepth}m`);
 
@@ -622,8 +843,12 @@ try {
   // 不带假设地跑完一整竿：只推帧、只记录状态迁移，让"触底自动收线"这条真实路径生效。
   // （原来我在这里手动调 _reel()，结果下潜途中已经触底自动收线过一次，
   //   第二次 _reel() 被 `if (reelPre > 0) return` 挡掉，状态早就跑到 air 了。）
-  const smoke = J(await ev(`JSON.stringify((()=>{const g=window.__game;
-    g.save.levels = { line:0,hook:0,sinker:0,power:0,lamp:0,winch:0,creel:0,insurance:0,sonar:5,bait:3,rig:2 };
+  const smoke = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
+    // 按当前 UPGRADE_ORDER 铺一份等级夹具（每一项都显式给值，不要手写键名 ——
+    // 手写的话删/加一项升级就会漏键，漏键的症状是"鱼再也钓不上来"而不是报错）。
+    g.save.levels = Object.fromEntries(cfg.UPGRADE_ORDER.map(k => [k, 0]));
+    g.save.levels.sinker = 2;          // 给铅坠一点等级，顺带覆盖"直达深度"那段代码
+    g.save.drop = { on: false, depth: 0 };
     g.applyUpgrades(); g.showIdle();
     g.enterDescend();
     const seen = [];
@@ -635,15 +860,16 @@ try {
       if (g.state === 'result' || (g.state === 'idle' && seen.length > 3)) break;
     }
     return { seen, caught: g.run.caught, castAirFrames,
-      sonarOn: document.querySelector('#ruler .sonar').classList.contains('on') };})())`));
+      // 声呐已删除：这里顺带确认整竿跑下来深度尺上不会冒出探测带
+      sonarNodes: document.querySelectorAll('#ruler .sonar').length };})())`));
   const sawDescend = smoke.seen.includes('descend');
   const sawAscend = smoke.seen.includes('ascend');
   const sawEnd = smoke.seen.includes('air') || smoke.seen.includes('result');
-  check('E1 带新升级项的一整竿流程跑得通（下潜 → 收线 → 上升 → 空中 → 结算）',
+  check('E1 一整竿流程跑得通（下潜 → 收线 → 上升 → 空中 → 结算）',
     sawDescend && sawAscend && sawEnd,
     smoke.seen.join(' → '));
-  check('E2 声呐开着时深度尺的探测带在整竿里一直可见',
-    smoke.sonarOn === true, `sonar.on=${smoke.sonarOn}`);
+  check('E2 整竿跑完深度尺上都没有声呐探测带（该机制已彻底移除）',
+    smoke.sonarNodes === 0, `sonar 节点 ${smoke.sonarNodes} 个`);
 
   const clean = errors.filter((e) => !/favicon|AudioContext/i.test(e));
   check('E3 全程控制台零报错', clean.length === 0, clean.slice(0, 3).join(' | ') || 'clean');

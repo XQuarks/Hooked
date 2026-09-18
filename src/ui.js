@@ -8,9 +8,9 @@
  *
  * 图标一律用 icons.js 的内联 SVG，不用 emoji —— 原因见 icons.js 顶部说明。
  */
-import { UPGRADES, UPGRADE_ORDER, MAX_LEVEL, upgradeCost, upgradeValueText,
+import { UPGRADES, UPGRADE_ORDER, MAX_LEVEL, maxLvOf, upgradeCost, upgradeValueText,
   levelCapForMap, MAPS, DEFAULT_MAP, mapById, mapMaxDepth, mapOfSpecies,
-  zonesOfMap, GUNS, GUN_MAX_LEVEL, gunById } from './config.js';
+  zonesOfMap, GUNS, GUN_MAX_LEVEL, gunById, CALLS } from './config.js';
 import { codexOrder, zoneLabel, groupByMap, drawFishIcon } from './codex.js';
 import { coinIcon, glyph, iconText, heartRow, GLYPH } from './icons.js';
 
@@ -40,13 +40,7 @@ const fmtCost = (n) => {
 };
 
 /**
- * 满级声呐的探测带半高 = 地图总深度的 14%（两侧各一份，合计照亮 28% 的尺子）。
- * 430m 的宁静海湾上就是 ±60m —— 大约能提前看见下面 3~5 条鱼。
- */
-const SONAR_SPAN = 0.14;
-
-/**
- * 商店里 11 项升级的图标 —— **全部走 icons.js 的内联 SVG**。
+ * 商店里各项升级的图标 —— **全部走 icons.js 的内联 SVG**。
  * `UPGRADES[key].icon` 存的就是 GLYPH 的键名，所以这里直接 `glyph(u.icon)`，
  * 不需要再维护一张 key → 图形的映射表（多一张表就多一处漏更新的机会）。
  *
@@ -91,8 +85,25 @@ export class UI {
       comboCnt: $('comboCnt'),
       floatLayer: $('floatLayer'),
       reelBtn: $('reelBtn'),
+      // 快速回收（绞盘）：上升阶段才出现的加速按钮
+      fastReelBtn: $('fastReelBtn'),
+      fastReelIco: $('fastReelIco'),
       phoneBtn: $('phoneBtn'),
       phoneIco: $('phoneIco'),
+      // 来电卡片（v0.7：iPhone 式 —— 头像 / 来电人 / 状态 / 两个圆钮）
+      callBanner: $('callBanner'),
+      callBannerIco: $('callBannerIco'),
+      callBannerWho: $('callBannerWho'),
+      iosState: $('iosState'),
+      callAccept: $('callAccept'),
+      callDecline: $('callDecline'),
+      // 新货上架推送（v0.7 第三批）
+      newsBanner: $('newsBanner'),
+      newsIco: $('newsIco'),
+      newsTitle: $('newsTitle'),
+      newsBody: $('newsBody'),
+      // 左下角手机的红点（有未读新枪 / 有没接的来电）
+      phoneDot: $('phoneDot'),
       hint: $('hint'),
       overlay: $('overlay'),
       // 枪械条（空中阶段）
@@ -113,14 +124,24 @@ export class UI {
       pApp: $('pApp'),
     };
     this.project = null;        // (worldX, worldY) => { nx, ny }
+    // 新货推送的队列与去重（**不属于存档** —— 刷新页面后横幅不再补播，
+    // 红点仍然在，因为那部分是 save.gunNews 的职责）
+    this._newsQueue = [];
+    this._newsShowing = false;
+    this._newsT = 0;
+    // 点推送卡 = 收起它并让 game 层打开枪店（onNewsTap 由 game 注入）
+    this.el.newsBanner.onclick = () => {
+      if (!this.el.newsBanner.classList.contains('on')) return;
+      clearTimeout(this._newsT);
+      this._hideNews();
+      this.onNewsTap && this.onNewsTap();
+    };
     this._zone = null;
     this._phone = null;         // { save, handlers, app }
     // 当前地图。**UI 层的唯一真相是这一个字段** —— 深度尺的总长、尺子上的分区、
     // 手机桌面小部件、图鉴 / 设置里的地图名全部读它，不再直接读 DEFAULT_MAP。
     this._map = DEFAULT_MAP;
     this._rulerTotal = mapMaxDepth(DEFAULT_MAP);   // 深度尺的总长 = 当前地图的深度上限
-    this._sonarPct = 0;         // 声呐等级（0~1），setSonar 里更新
-    this._hookDepth = 0;        // 鱼钩当前深度，声呐探测带的中心
     this._fillIcons();
     this._buildRuler();
   }
@@ -128,16 +149,12 @@ export class UI {
   // ── 地图 ─────────────────────────────────────────────────
   /**
    * 换到某张地图。深度尺的总长和尺子上的分区色带都要重建 ——
-   * 宁静海湾是 430m / 5 层，冰封极地是 620m / 5 层，尺子直接换个量程。
-   *
-   * ⚠ 重建之后必须把 `_sonarPct` 重新灌一遍：`setSonar` 只存值，
-   *   探测带的半高是按 `_rulerTotal` 算的，尺子换量程后旧带子会停在上一个量程的位置。
+   * 宁静海湾是 860m / 5 层，冰封极地是 1240m / 5 层，尺子直接换个量程。
    */
   setMap(map) {
     this._map = mapById(map && map.id);
     this._rulerTotal = mapMaxDepth(this._map);
     this._buildRuler();
-    this._paintSonar();
     // 不在这里重绘 App：换图是 game.enterMap 发起的，它会紧接着调 refreshApp()。
     // 这里再刷一次的话，航线 App 的按钮会在点击处理过程中被重建（点了个寂寞）。
   }
@@ -149,7 +166,13 @@ export class UI {
   _fillIcons() {
     this.el.coinIco.innerHTML = coinIcon(14);
     this.el.depthIco.innerHTML = glyph('wave', 14);
-    this.el.phoneIco.innerHTML = glyph('phone', 19);
+    this.el.phoneIco.innerHTML = glyph('phone', 22);
+    // 来电卡片：两个圆钮用的是**同一个听筒图标**，挂断那个在 CSS 里转 134°（真机就是这么干的）
+    this.el.callAccept.innerHTML = glyph('phone', 19);
+    this.el.callDecline.innerHTML = glyph('phone', 19);
+    this.el.callBannerIco.innerHTML = glyph('call-in', 20);
+    this.el.newsIco.innerHTML = glyph('gunshop', 20);
+    this.el.fastReelIco.innerHTML = glyph('fast-reel', 16);
     this.el.pSig.innerHTML = glyph('signal', 14);
     this.el.pWifi.innerHTML = glyph('wifi', 14);
     this.el.pBat.innerHTML = glyph('battery', 14);
@@ -173,8 +196,6 @@ export class UI {
       this._marker.style.top = `${Math.min(100, (d / this._rulerTotal) * 100)}%`;
       this._markerTag.textContent = `已潜 −${d}m`;
     }
-    this._hookDepth = Number.isFinite(cur) ? Math.max(0, cur) : d;
-    this._paintSonar();
   }
 
   setMuteIcon(muted) {
@@ -231,15 +252,6 @@ export class UI {
     this._marker.innerHTML = '<span class="tag">已潜</span>';
     this.el.ruler.appendChild(this._marker);
     this._markerTag = this._marker.querySelector('.tag');
-
-    // 声呐探测带（升级项 sonar）：以鱼钩为中心的一条带 + 带内鱼的位置刻度。
-    // 整层始终在 DOM 里，靠 .on 控制显隐 —— 声呐 0 级时完全不出现。
-    this._sonar = document.createElement('div');
-    this._sonar.className = 'sonar';
-    this._sonar.innerHTML = '<div class="s-band"></div><div class="s-blips"></div>';
-    this.el.ruler.appendChild(this._sonar);
-    this._sBand = this._sonar.querySelector('.s-band');
-    this._sBlips = this._sonar.querySelector('.s-blips');
   }
 
   setRulerVisible(v) { this.el.ruler.classList.toggle('on', v); }
@@ -256,61 +268,10 @@ export class UI {
     this.el.lineVal.textContent = Math.round(maxDepth);
   }
 
-  // ── 声呐 ─────────────────────────────────────────────────
-  /**
-   * 声呐（升级项 `sonar`）：在深度尺上以鱼钩为中心画一条探测带，带内的鱼显示成刻度。
-   *
-   * 为什么是"围绕鱼钩的一条带"而不是"整把尺子全部点亮"：
-   * 声呐的用途是**决定还要不要再往下**。整张图全亮等于把探索直接跳过去；
-   * 只亮眼前这一段，才会产生"再放 40m 看看"这个决策 —— 而这正是升级该买的东西。
-   *
-   * 带宽按**地图总深度的百分比**算（而不是固定米数）：这样换到更深的地图时，
-   * 满级声呐的视野不会跟着缩水，否则升级的收益会被地图稀释掉。
-   *
-   * @param {number} pct 0~1（= LEVELS.sonar 的值 / 100）。0 表示没有声呐，整层隐藏。
-   */
-  setSonar(pct) {
-    this._sonarPct = Number.isFinite(pct) ? Math.max(0, Math.min(1, pct)) : 0;
-    if (this._sonar) this._sonar.classList.toggle('on', this._sonarPct > 0);
-    if (this._sonarPct <= 0 && this._sBlips) this._sBlips.innerHTML = '';
-    this._paintSonar();
-  }
-
-  /** 探测带半高（世界单位 = 米） */
-  get _sonarHalf() { return this._sonarPct * this._rulerTotal * SONAR_SPAN; }
-
-  /** 把探测带挪到当前鱼钩深度上（setDepth 每帧调） */
-  _paintSonar() {
-    if (!this._sBand || !this._sonarPct) return;
-    const total = this._rulerTotal;
-    const c = this._hookDepth || 0;
-    const top = Math.max(0, c - this._sonarHalf);
-    const bot = Math.min(total, c + this._sonarHalf);
-    this._sBand.style.top = `${(top / total) * 100}%`;
-    this._sBand.style.height = `${((bot - top) / total) * 100}%`;
-  }
-
-  /**
-   * 探测带里的鱼 → 尺子上的刻度。
-   * 由 game 每隔 ~0.15s 喂一次（不是每帧 —— 每帧重建 DOM 纯属浪费）。
-   * 只挑落在带内的：带外的鱼就算喂进来也不画。
-   * @param {Array<{d:number, hot:boolean}>} list 每条鱼的深度（米，正数）
-   */
-  setSonarBlips(list) {
-    if (!this._sBlips) return;
-    if (!this._sonarPct || !list || !list.length) {
-      if (this._sBlips.childElementCount) this._sBlips.innerHTML = '';
-      return;
-    }
-    const total = this._rulerTotal;
-    const c = this._hookDepth || 0;
-    const half = this._sonarHalf;
-    const hit = list.filter((b) => Math.abs(b.d - c) <= half);
-    this._sBlips.innerHTML = hit.map((b) => {
-      const top = Math.min(100, (b.d / total) * 100);
-      return `<i class="s-blip${b.hot ? ' hot' : ''}" style="top:${top}%"></i>`;
-    }).join('');
-  }
+  // ── 声呐（v0.5 已移除）──────────────────────────────────
+  // 「声呐」升级项连同深度尺上的探测带一起删掉了。原来的实现（围绕鱼钩的一条
+  // 探测带 + 带内鱼的刻度）在 git 历史里可以找到；这里不再保留空壳方法 ——
+  // 留一个永远不被调用的 setSonar 只会让下一个人以为它还在生效。
 
   /**
    * 主界面大标题 = **当前地图名**（固定「宁静海湾」，不随深度/升级变化）。
@@ -410,8 +371,115 @@ export class UI {
   // ── 收线按钮 / 手机入口 / 提示 ────────────────────────────
   showReel(v) { this.el.reelBtn.classList.toggle('on', v); }
 
+  // ── 快速回收（绞盘，v0.5）────────────────────────────────
+  /**
+   * 显示 / 隐藏「快速回收」按钮。只有**上升阶段 + 已买绞盘**才显示 ——
+   * 判断在 game 那边做（UI 不做判断，见枪店那段注释的同一原则）。
+   */
+  showFastReel(v) { this.el.fastReelBtn.classList.toggle('on', !!v); }
+
+  /**
+   * 标记"本竿已经按过快速回收"：按钮变灰不可再按。
+   *
+   * 为什么按下之后还要留在屏幕上（而不是直接隐藏）：玩家需要看到"我按过了"
+   * 这个回执，否则会怀疑自己是不是没按中，然后一直戳。
+   */
+  setFastReel(used) {
+    this.el.fastReelBtn.classList.toggle('used', !!used);
+    this.el.fastReelBtn.disabled = !!used;
+  }
+
+  // ── 铅坠·直达深度（v0.5）────────────────────────────────
+  /**
+   * 把「直达深度」的当前状态喂给商店控件。
+   *
+   * ⚠ 上限 `cap` 由 game 算好传进来（= 铅坠等级与"鱼线极限 × 70%"取小）——
+   *   UI **不自己算**：那个上限依赖鱼线等级和当前地图，散一份到界面里
+   *   迟早会和 game 里的那份漂开（历史教训：同一个数写在两处必然错位）。
+   *
+   * @param {{on:boolean, depth:number}} drop 存档里的玩家偏好
+   * @param {number} cap  本图 / 本等级下允许的最大跳深（米）
+   * @param {number} min  允许的最小跳深（米）
+   */
+  setDropControl(drop, cap, min) {
+    this._drop = { on: !!(drop && drop.on), depth: Math.max(0, Math.round((drop && drop.depth) || 0)) };
+    this._dropCap = Math.max(0, Math.round(cap || 0));
+    this._dropMin = Math.max(0, Math.round(min || 0));
+  }
+
   /** 手机入口：只在待机（船上）时出现 —— 商店 / 图鉴 / 设置 全在里面 */
   showPhoneBtn(v) { this.el.phoneBtn.classList.toggle('on', v); }
+
+  // ── 来电（v0.6 首版 / v0.7 改成 iPhone 式卡片）────────────────
+  /**
+   * 来电状态：**小手机开始晃动** + **屏幕上方滑入一张 iPhone 式来电卡**。
+   *
+   * 为什么不做全屏来电界面（真机就是全屏，这里刻意不抄）：
+   * ① 全屏会打断玩家正在做的事（待机时他可能正要点画面抛竿）；
+   * ② **晃动本身就在说"手机里有东西"** —— 这正是"手机响了"的语义，
+   *    玩家不需要被教育就知道该去掏手机。
+   *
+   * @param {boolean} on
+   * @param {{who:string, icon?:string}} [call] 来电人（名字 + 头像用的 GLYPH 键）
+   */
+  ringPhone(on, call) {
+    this.el.phoneBtn.classList.toggle('ringing', !!on);
+    this.el.callBanner.classList.toggle('on', !!on);
+    if (on && call) {
+      this.el.callBannerWho.textContent = call.who;
+      // 头像按来电人上色 + 换字形：和通话记录里的小头像**同一套**规则
+      //（历史上这两处颜色不一致过一次，玩家会以为记错了人）。
+      this.el.callBannerIco.className = `ios-ava ${call.icon || ''}`;
+      this.el.callBannerIco.innerHTML = glyph(call.icon || 'call', 20);
+      this.el.iosState.textContent = '来电中…';
+    }
+  }
+
+  // ── 新货上架推送（v0.7 第三批）─────────────────────────────
+  /**
+   * iOS 式推送：顶部滑入一张通知卡（App 图标 + 标题 + 正文 + 「现在」），
+   * 4.2 秒后自动收起，排队的逐条播。**点它 = 打开枪店** —— 红点就是在那一步消失的。
+   *
+   * 为什么排队而不是一次全弹：潜到某个深度可能一次满足两把枪的 `unlockDepth`，
+   * 两张卡叠在一起会互相盖住 —— iOS 的做法也是逐条轮播。
+   *
+   * 为什么不跟来电共用一张卡：来电是"有人在找你"（要接 / 不接，两个动作），
+   * 推送是"有新东西可看"（点与不点都不影响进度）。两者长得一样的话，
+   * 玩家会开始害怕每一次震动。
+   */
+  queueGunNews(ids) {
+    for (const id of ids) {
+      const g = gunById(id);
+      if (g && !this._newsQueue.some((x) => x.id === g.id)) this._newsQueue.push(g);
+    }
+    this.pumpNews();
+  }
+
+  /** 放下一张推送卡（队列空 / 正在显示 / 手机开着 时不放） */
+  pumpNews() {
+    if (this._newsShowing || !this._newsQueue.length) return;
+    if (this._phone && !this.el.phoneLayer.classList.contains('hidden')) return;  // 手机开着不打扰
+    const g = this._newsQueue.shift();
+    this._newsShowing = true;
+    this.el.newsIco.innerHTML = glyph(g.icon || 'gunshop', 20);
+    this.el.newsTitle.textContent = '枪店 · 新货上架';
+    this.el.newsBody.textContent = `「${g.name}」已经到货 —— 手机里的枪店可以看看`;
+    this.el.newsBanner.classList.add('on');
+    clearTimeout(this._newsT);
+    this._newsT = setTimeout(() => this._hideNews(), 4200);
+  }
+
+  _hideNews() {
+    this.el.newsBanner.classList.remove('on');
+    this._newsShowing = false;
+    // 稍等动画收完再放下一张，两张卡不会叠在一起
+    setTimeout(() => this.pumpNews(), 520);
+  }
+
+  /** 左下角手机的红点：> 0 就亮（数量在手机桌面的枪店图标上显示） */
+  setPhoneBadge(n) {
+    this.el.phoneDot.classList.toggle('on', n > 0);
+  }
 
   /** 枪械条：只在空中射击阶段出现 */
   showGunBar(v) { this.el.gunBar.classList.toggle('on', v); }
@@ -435,14 +503,18 @@ export class UI {
     this.el.gunMeta.textContent = `Lv.${g.level}`;
 
     const reloading = g.reloadT > 0;
-    // 兜底：倍率缺失时按 ×1 显示。枪械条是每帧刷的 HUD，
+    // 枪械条右侧读数。v0.5 起不再有全局攻击力倍率，所以这里改显示**伤害/发** ——
+    // 它就是"攻击力"本身，玩家要能一眼看到升枪之后这个数变大了。
+    //
+    // 兜底：数值缺失时按 0 显示。枪械条是每帧刷的 HUD，
     // 这里抛一次异常就会把整个 _updateAir 打断（症状是"鱼打不死、也不结算"）。
-    const mul = Number.isFinite(g.mul) ? g.mul : 1;
-    let ammo = `×${mul.toFixed(2)}`;
+    const dmg = Number.isFinite(g.damage) ? g.damage : 0;
+    const dmgTxt = dmg >= 10 ? String(Math.round(dmg)) : dmg.toFixed(1);
+    let ammo = `${dmgTxt} 伤害`;
     if (reloading) ammo = '换弹…';
     else if (g.mech === 'laser') {
       // 激光读的是"当前递增到几倍"，玩家才知道"再照一会儿更疼"
-      ammo = `×${(1 + Math.min(g.rampMax || 0, (g.ramp || 0) * g.heat)).toFixed(1)}`;
+      ammo = `${dmgTxt} × ${(1 + Math.min(g.rampMax || 0, (g.ramp || 0) * g.heat)).toFixed(1)}`;
     } else if (g.mag) ammo = `${g.ammo} / ${g.mag}`;
     this.el.gunAmmo.textContent = ammo;
 
@@ -528,11 +600,21 @@ export class UI {
     // 桌面小部件显示的是**本图**的最深纪录（不是全局 bestDepth）——
     // 换到冰封极地之后，"最深纪录"要跟着这张图走，否则会显示海湾那 430m。
     const best = Math.max(0, Math.round(save.mapBest?.[map.id] || 0));
-    const apps = [['shop', '渔具店'], ['gunshop', '枪店'], ['codex', '鱼图鉴'],
-      ['route', '航线'], ['settings', '设置']]
+    // ⚠ 「电话」放在第一位：手机响了的时候，玩家第一眼要能看见它在哪。
+    //   有未听的来电时图标上挂一个红点徽标（和真手机一样）。
+    const ringing = !!this._phone.handlers.ringingCall?.();
+    // 未读新枪（v0.7 第三批）：枪店图标上挂一个红点，多于一把时显示数字
+    const gunNews = (this._phone.handlers.gunNews && this._phone.handlers.gunNews()) || [];
+    // 桌面 App 列表 = **已解锁的那些**（v0.7：船厂要等船厂老板打来电话才出现）。
+    // ⚠ 解锁名单由 game 给（`handlers.apps`）—— 界面不自己判断"该不该有这一格"，
+    //   否则"桌面多出一个没被介绍过的 App"这种错会藏在 UI 里。
+    const unlocked = (this._phone.handlers.apps && this._phone.handlers.apps()) || null;
+    const apps = [['call', '电话'], ['shop', '渔具店'], ['gunshop', '枪店'], ['codex', '鱼图鉴'],
+      ['route', '航线'], ['boat', '船厂'], ['settings', '设置']]
+      .filter(([id]) => !unlocked || unlocked.includes(id))
       .map(([id, nm]) => `
         <button class="p-app-item" data-app="${id}">
-          <span class="p-ico ${id}">${glyph(id, 28)}</span><span>${nm}</span>
+          <span class="p-ico ${id}">${glyph(id, 28)}${id === 'call' && ringing ? '<i class="p-badge"></i>' : ''}${id === 'gunshop' && gunNews.length ? `<i class="p-badge num">${gunNews.length > 1 ? gunNews.length : ''}</i>` : ''}</span><span>${nm}</span>
         </button>`).join('');
 
     // 图鉴进度只算**本图**的鱼种。全局进度放在图鉴 App 里，
@@ -560,7 +642,7 @@ export class UI {
         </div>
       </div>
       <div class="p-grid">${apps}</div>
-      <div class="p-note" style="margin:0 14px">渔具店 / 枪店 / 图鉴 / 航线 / 设置都装在这台手机里 —— 点图标打开 App。想抛竿就先收起手机，再点一下画面。</div>
+      <div class="p-note" style="margin:0 14px">电话 / 渔具店 / 枪店 / 图鉴 / 航线${unlocked && unlocked.includes('boat') ? ' / 船厂' : ''} / 设置都装在这台手机里 —— 点图标打开 App。想抛竿就先收起手机，再点一下画面。</div>
     `;
     this.el.pHome.querySelectorAll('[data-app]').forEach((b) => {
       b.onclick = () => {
@@ -573,7 +655,14 @@ export class UI {
   /** 打开某个 App */
   openApp(id) {
     if (!this._phone) return;
+    // 点开枪店 = "已读"（v0.7 第三批）：手机红点 / 枪店 App 红点在这一步消失。
+    // ⚠ 新枪身上的「NEW」角标**不**跟着消失 —— 它跟到那把枪被买下为止，
+    //   否则玩家刚点进来角标就没了，"新货"这件事就没人记得了。
+    if (id === 'gunshop' && this._phone.handlers.clearGunNews) this._phone.handlers.clearGunNews();
     this._phone.app = id;
+    // 每次进来电界面都从第一句重新开始（`_callStep` 是界面自己的推进状态，
+    // 不属于存档 —— 挂了电话再进来应该重头听）
+    if (id === 'call') this._callStep = 0;
     this.el.pHome.classList.add('hidden');
     this.el.pApp.classList.remove('hidden');
     this._renderApp();
@@ -598,10 +687,12 @@ export class UI {
     const order = codexOrder();
 
     let html = '';
-    if (id === 'shop') html = this._appShell('渔 具 店', `金币 ${fmt(save.coins)}`, this._shopBody(save, this.mapIndex));
+    if (id === 'call') html = this._appShell('电 话', this._callNote(handlers), this._callBody(handlers));
+    else if (id === 'shop') html = this._appShell('渔 具 店', `金币 ${fmt(save.coins)}`, this._shopBody(save, this.mapIndex));
     else if (id === 'gunshop') html = this._appShell('枪 店', `金币 ${fmt(save.coins)}`, this._gunshopBody(save, handlers));
     else if (id === 'codex') html = this._appShell('鱼 类 图 鉴', '按地图 · 深度排序', this._codexBody(save, order));
     else if (id === 'route') html = this._appShell('航 线', `金币 ${fmt(save.coins)}`, this._routeBody(save, handlers));
+    else if (id === 'boat') html = this._appShell('船 厂', `金币 ${fmt(save.coins)}`, this._boatBody(save, handlers));
     else if (id === 'settings') html = this._appShell('设 置', 'v1.0', this._settingsBody(save, handlers));
 
     this.el.pApp.innerHTML = html;
@@ -609,10 +700,36 @@ export class UI {
     const back = this.el.pApp.querySelector('[data-back]');
     if (back) back.onclick = () => { handlers.tap && handlers.tap(); this.showPhoneHome(); };
 
-    if (id === 'shop') {
+    if (id === 'call') {
+      // 来电界面：推进对话 / 挂断 / 直接去目标 App。
+      // ⚠ `_callStep` 由界面维护（挂了再进来重头听），但"标记已听 + 写存档 + 跳 App"
+      //   全部交回 game —— 界面只负责说"我要下一步了"。
+      const next = this.el.pApp.querySelector('#callNext');
+      if (next) next.onclick = () => { handlers.tap && handlers.tap(); this._callStep = (this._callStep || 1) + 1; this._renderApp(); };
+      const skip = this.el.pApp.querySelector('#callSkip');
+      if (skip) skip.onclick = () => { handlers.endCall && handlers.endCall(true); };
+      const hang = this.el.pApp.querySelector('#callHang');
+      if (hang) hang.onclick = () => { handlers.endCall && handlers.endCall(false); };
+      const go = this.el.pApp.querySelector('#callGo');
+      if (go) go.onclick = () => { handlers.endCall && handlers.endCall(true); };
+    } else if (id === 'shop') {
       this.el.pApp.querySelectorAll('.buy[data-k]').forEach((b) => {
         b.onclick = () => handlers.buy(b.dataset.k);
       });
+      // 铅坠的「直达深度」控件：开关 + 目标深度步进。
+      // ⚠ 步进值在这里算（步长是"界面粒度"，属于表现层），但**钳制在 game 那边做** ——
+      //   界面只管发出"我想要多少"，不负责判断能不能。
+      const drop = this._drop || { on: false, depth: 0 };
+      const cap = this._dropCap || 0;
+      const min = this._dropMin || 0;
+      const cur = Math.min(Math.max(drop.depth || 0, min), cap);
+      const step = cap >= 600 ? 50 : 20;
+      const tg = this.el.pApp.querySelector('#dropTg');
+      if (tg) tg.onclick = () => { handlers.setDropOn(!drop.on); this.refreshApp(); };
+      const minus = this.el.pApp.querySelector('#dropMinus');
+      if (minus) minus.onclick = () => handlers.setDropDepth(Math.max(min, cur - step));
+      const plus = this.el.pApp.querySelector('#dropPlus');
+      if (plus) plus.onclick = () => handlers.setDropDepth(Math.min(cap, cur + step));
     } else if (id === 'gunshop') {
       // 三个动作各管各的按钮：买（没拥有）→ 装备（拥有但不是当前）→ 升级（拥有）
       this.el.pApp.querySelectorAll('[data-gun-buy]').forEach((b) => {
@@ -628,6 +745,14 @@ export class UI {
       this.el.pApp.querySelectorAll('.rt-go[data-map]').forEach((b) => {
         b.onclick = () => handlers.goMap(b.dataset.map);
       });
+    } else if (id === 'boat') {
+      // 买（还没拥有）/ 换（已拥有但不是当前）—— 两个动作各管各的按钮
+      this.el.pApp.querySelectorAll('[data-boat-buy]').forEach((b) => {
+        b.onclick = () => handlers.buyBoat(b.dataset.boatBuy);
+      });
+      this.el.pApp.querySelectorAll('[data-boat-use]').forEach((b) => {
+        b.onclick = () => handlers.setBoat(b.dataset.boatUse);
+      });
     } else if (id === 'codex') {
       this._paintCodexIcons(this.el.pApp, save, order, 56, 38);
     } else if (id === 'settings') {
@@ -640,38 +765,141 @@ export class UI {
     }
   }
 
+  // ── App 内容：电话（v0.6）────────────────────────────────
+  /** App 标题栏右侧那行小字：有来电时写「通话中」，否则写通话记录条数 */
+  _callNote(handlers) {
+    const cur = handlers.ringingCall && handlers.ringingCall();
+    if (cur) return '通 话 中';
+    const done = (handlers.callLog && handlers.callLog()) || [];
+    return done.length ? `已接 ${done.length} 通` : '暂无通话';
+  }
+
+  /**
+   * 电话 App 的正文。
+   *
+   * 两种状态：
+   *   ① **有未听的来电** → 来电界面（逐句推进的对话 + 接完跳转）
+   *   ② 没有 → 通话记录（听过的电话，点开能重看内容）
+   *
+   * ⚠ 界面**不做任何判断**：有没有来电、听过哪些，全部来自 `game` 喂进来的 handler
+   *   （和枪店同一条原则 —— 判断留在 UI 里的话，"按钮亮着却点不动"会散得到处都是）。
+   */
+  _callBody(handlers) {
+    const cur = handlers.ringingCall && handlers.ringingCall();
+    if (cur) return this._callIncoming(cur, handlers);
+
+    const done = (handlers.callLog && handlers.callLog()) || [];
+    const heard = CALLS.filter((c) => done.includes(c.id));
+    if (!heard.length) {
+      return `<div class="call-empty">
+        <div class="call-empty-ico">${glyph('call', 34)}</div>
+        <b>还没有通话记录</b>
+        <span>该打来的人会自己打过来 —— 在船上等着就行。</span>
+      </div>`;
+    }
+    const rows = heard.map((c) => `
+      <div class="call-log-item">
+        <span class="cl-ico ${c.icon}">${glyph(c.icon, 16)}</span>
+        <div class="cl-txt">
+          <b>${c.who}</b>
+          <i>${c.lines[0]}</i>
+        </div>
+      </div>`).join('');
+    return `
+      <div class="p-note" style="margin:0 0 10px">
+        听过的电话都记在这里。<b>没听过的不会显示</b> —— 想知道后面还有什么，就继续钓。
+      </div>
+      <div class="call-log">${rows}</div>`;
+  }
+
+  /**
+   * 来电界面：逐句推进的对话。
+   *
+   * 为什么是"一句一句出"而不是一次全显示：**这是电话**。
+   * 一次全铺开读起来像短信，一句一句推才有"对面在说话"的节奏感 ——
+   * 而节奏感正是让玩家愿意读完这几句的原因（他平时是直接跳过说明文字的）。
+   *
+   * 推进状态 `this._callStep` 是**界面自己的**，不进存档：挂了再进来应该重头听。
+   */
+  _callIncoming(c, handlers) {
+    const step = Math.max(1, Math.min(this._callStep || 1, c.lines.length));
+    const shown = c.lines.slice(0, step);
+    const last = step >= c.lines.length;
+    const bubbles = shown.map((t, i) => `<div class="call-line${i === step - 1 ? ' now' : ''}">${t}</div>`).join('');
+    const acts = last
+      ? `<button class="call-btn ghost" id="callHang">挂 断</button>
+         <button class="call-btn gold" id="callGo">${c.gotoText}</button>`
+      : `<button class="call-btn" id="callNext">继 续 ▾</button>`;
+    return `
+      <div class="call-card">
+        <div class="call-ava ${c.icon}">${glyph(c.icon, 30)}</div>
+        <div class="call-who">${c.who}</div>
+        <div class="call-state">${last ? '通话中' : '来电中…'}</div>
+        <div class="call-lines">${bubbles}</div>
+        <div class="call-act">${acts}</div>
+        ${last ? '' : `<div class="call-skip" id="callSkip">跳过 · 直接去 ${c.gotoText.replace(/\s/g, '')}</div>`}
+      </div>`;
+  }
+
   // ── App 内容：商店 ───────────────────────────────────────
   /**
-   * 11 项 × 20 级。三件事和 5 项时代不一样：
+   * 6 项等级升级 + 1 项一次性工具（v0.5）。三件事：
    *
-   *   1. **数值文案从 LEVELS 现取**（`upgradeValueText`），不再在 UPGRADES 里手写 5 个字符串 ——
-   *      20 个等级 × 11 项手写必然错位。
-   *   2. **等级用 20 格进度条**而不是 5 颗点。21 颗点在这个宽度里会糊成一条线。
+   *   1. **数值文案从 LEVELS 现取**（`upgradeValueText`），不在 UPGRADES 里手写 ——
+   *      20 个等级 × 6 项手写必然错位。
+   *   2. **等级用进度条**而不是几颗点。格子数 = **该项自己的上限**（`maxLvOf`）。
    *   3. **分段封顶**：本图只开到 `levelCapForMap(mapIndex)`。满了之后按钮变成「本图满级」，
    *      这就是"该换地图了"的信号（见 config.js 的 MAP_LEVEL_CAP）。
+   *
+   * ⚠ v0.5 新增 `oneShot`（绞盘）：它没有等级，只有「未购买 / 已拥有」两态 ——
+   *   所以既不画进度条、也不显示「当前 → 下一级」的数值文案。
+   *   **所有上限判断一律走 `maxLvOf(key)`**，不要写死 `MAX_LEVEL`：
+   *   写死的话绞盘会在 lv=1 时被判成"还能买"，给出一个永远点不动的按钮。
    */
   _shopBody(save, mapIndex = 0) {
     const cap = levelCapForMap(mapIndex);
-    const licenses = save.licenses || [];
+    // 本图**开放的这一段**：进度条只画这一段（v0.7）。
+    // 为什么：首图是"新手图"，把 20 格全画出来等于提前把所有长线目标摊开给玩家看，
+    // 既显得货架很空（前 15 格全是灰的），也让"换图"失去"又开了一段"的意义。
+    const from = mapIndex > 0 ? levelCapForMap(mapIndex - 1) : 0;
+    const seg = Math.max(1, cap - from);
+    // ⚠⚠ v0.7 第二批：`unlockMap` 的判定从「手里有没有这张图的**许可证**」
+    //   改成了「**到没到过**这张图」（`mapProgress().owned`）。
+    //   许可证已经整条退役（两张图都是 0，没人再发证）—— 继续读 `save.licenses`
+    //   的话，鱼护 / 鱼饵 / 绞盘会**永远锁在「未解锁」**，玩家换到极地也买不到。
+    const routes = (this._phone && this._phone.handlers.mapList && this._phone.handlers.mapList()) || [];
+    const reached = (mapId) => routes.some((p) => p.map.id === mapId && p.owned);
     let lastTier = '';
 
     const rows = UPGRADE_ORDER.map((key) => {
       const u = UPGRADES[key];
       const lv = save.levels[key];
-      const locked = !!u.unlockMap && !licenses.includes(u.unlockMap);
-      const maxed = lv >= MAX_LEVEL;          // 全局满级
-      const capped = !maxed && lv >= cap;     // 本图这一段已经买满
+      const maxLv = maxLvOf(key);
+      const oneShot = !!u.oneShot;
+      const maxed = lv >= maxLv;                        // 该项满级（一次性项买过就是满级）
+      // ⚠ 分段解锁（v0.6）：`unlockMap` 指向的许可证还没拿到时，这一项不在货架上。
+      // ⚠⚠ `!maxed` 是**老存档**的兜底（B5）：绞盘改成 `unlockMap: 'polar'` 之后，
+      //   一个在改动之前就买过绞盘的老档，licenses 里没有 polar ——
+      //   不加这个条件的话商店会把它显示成「未解锁」，
+      //   而他手里那个「快速回收」按钮其实一直是可用的（game.js 只看 levels.winch）。
+      //   **已拥有的东西不能被"没解锁"覆盖**，否则玩家会以为自己的钱白花了。
+      const locked = !maxed && !!u.unlockMap && !reached(u.unlockMap);
+      const capped = !oneShot && !maxed && lv >= cap;    // 本图这一段已经买满
       const cost = upgradeCost(key, lv);
-      const afford = !locked && !capped && save.coins >= cost;
+      const afford = !locked && !capped && !maxed && save.coins >= cost;
 
+      // 数值文案：一次性项没有「当前 → 下一级」，`upgradeValueText` 返回空串
       const cur = upgradeValueText(key, lv);
-      const next = capped ? null : upgradeValueText(key, lv + 1);
+      const next = (capped || maxed) ? null : upgradeValueText(key, lv + 1);
       // 单位只在**行尾**出现一次：`1033 → 1100m`，而不是 `1033m → 1100m`。
       // 商店那一列只有 ~176px，重复一遍单位要多占 14~28px，满级附近的长数字
       // 叠上重复单位就必然折行。封顶时（没有 → ）也要带上单位，否则当前值成了裸数字。
-      const nx = next ? `${cur} → ${next}${u.unit}` : `${cur}${u.unit}`;
-      const pips = Array.from({ length: MAX_LEVEL },
-        (_, i) => `<i class="${i < lv ? 'f' : ''}"></i>`).join('');
+      const nx = oneShot ? '' : (next ? `${cur} → ${next}${u.unit}` : `${cur}${u.unit}`);
+
+      // 进度条只画**本图这一段**（v0.7）：格子数 = cap − 上一张图的闸门。
+      // 已占格数按段内偏移算 —— 带着 Lv6 进第二张图时，条上应该是"1 格亮"而不是"6 格亮"。
+      const pips = oneShot ? ''
+        : Array.from({ length: seg }, (_, i) => `<i class="${(from + i) < lv ? 'f' : ''}"></i>`).join('');
 
       const tierHead = u.tier !== lastTier ? `<div class="tier-h">${u.tier}</div>` : '';
       lastTier = u.tier;
@@ -680,30 +908,63 @@ export class UI {
       // （自动化回归、将来的"跳到某项"功能）在封顶时就查不到元素了。
       let btn;
       if (locked) btn = `<button class="buy lock" data-k="${key}" disabled>未解锁</button>`;
-      else if (maxed) btn = `<button class="buy max" data-k="${key}" disabled>MAX</button>`;
+      else if (maxed) btn = `<button class="buy max" data-k="${key}" disabled>${oneShot ? '已拥有' : 'MAX'}</button>`;
       else if (capped) btn = `<button class="buy cap" data-k="${key}" disabled>本图满级</button>`;
       // 价格走 fmtCost：满级附近是 `106万` 而不是 `1,057,128`，
       // 按钮不会被撑宽，右边那列文案也就不会被挤到折行（见 fmtCost 的注释）。
       else btn = `<button class="buy" data-k="${key}" ${afford ? '' : 'disabled'}>${coinIcon(12)} ${fmtCost(cost)}</button>`;
 
+      // 铅坠这一行下面挂「直达深度」的开关 + 目标深度步进器
+      const extra = key === 'sinker' ? this._dropRow() : '';
+
       return `${tierHead}
-        <div class="item ${afford ? 'afford' : ''}">
+        <div class="item ${afford ? 'afford' : ''}${locked ? ' locked-row' : ''}">
           <div class="icon">${glyph(u.icon, 19)}</div>
           <div class="info">
-            <div class="nm">${u.name}<span class="lv">Lv.${lv} / ${MAX_LEVEL}</span></div>
-            <div class="ds">${u.desc} · <span class="nx">${nx}</span></div>
-            <div class="pips">${pips}</div>
+            <div class="nm">${u.name}<span class="lv">${oneShot ? (lv > 0 ? '已拥有' : '未拥有') : `Lv.${lv} / ${cap}`}</span></div>
+            <div class="ds">${u.desc}${locked ? '' : (nx ? ` · <span class="nx">${nx}</span>` : '')}</div>
+            ${locked ? `<div class="lock-hint">${glyph('lock', 11)}${u.tier === '工具' ? '高级强化' : '进阶强化'} · 到过「冰封极地」后上架</div>`
+                     : (pips ? `<div class="pips">${pips}</div>` : '')}
           </div>
           ${btn}
-        </div>`;
+        </div>${extra}`;
     }).join('');
 
     return `
       <div class="wallet"><span class="lb">金币</span><span class="amt">${fmt(save.coins)}</span></div>
       <div class="p-note" style="margin:0 0 10px">
-        本图开放至 <b>Lv.${cap}</b> / ${MAX_LEVEL} —— 买满后换一片海继续往上堆。
+        本图开放至 <b>Lv.${cap}</b> —— 这一段买满后，换一片海继续往上堆（每片海只开一段）。
       </div>
       <div class="shop-list">${rows}</div>`;
+  }
+
+  /**
+   * 铅坠的「直达深度」控件（v0.5）。
+   *
+   * 为什么挂在铅坠这一行下面、而不是塞进「设置」App：
+   * 它是这一项升级的**用法**。拆到别的 App 里，玩家根本不会把"我买的东西"
+   * 和"这个开关"联系起来 —— 而这条机制的全部价值就在于玩家知道它在起作用。
+   *
+   * 数据来自 `game.applyUpgrades()` 喂进来的 `setDropControl()`。
+   */
+  _dropRow() {
+    const d = this._drop || { on: false, depth: 0 };
+    const cap = this._dropCap || 0;
+    const min = this._dropMin || 0;
+    const cur = Math.min(Math.max(d.depth || 0, min), cap);
+    const usable = cap > 0;
+    return `
+      <div class="drop-row${usable ? '' : ' off'}">
+        <button class="drop-tg${d.on ? ' on' : ''}" id="dropTg" ${usable ? '' : 'disabled'}>
+          ${d.on ? '直达 · 开' : '直达 · 关'}
+        </button>
+        <div class="drop-dep">
+          <button class="drop-st" id="dropMinus" ${cur <= min ? 'disabled' : ''}>−</button>
+          <span class="drop-val">−${cur}m</span>
+          <button class="drop-st" id="dropPlus" ${cur >= cap ? 'disabled' : ''}>+</button>
+        </div>
+      </div>
+      <div class="drop-hint">开竿直接落到 −${cur}m，省掉这一段下潜 · 上限 −${cap}m</div>`;
   }
 
   // ── App 内容：枪店（v0.4）─────────────────────────────────
@@ -735,6 +996,21 @@ export class UI {
       // 玩家一眼就知道"现在该买哪一档"。tier 字段只在枪店里用得到。
       const tierHead = g.tier !== lastTier ? `<div class="tier-h">${g.tier}</div>` : '';
       lastTier = g.tier;
+      // ── 分段解锁（v0.7 第三批）：还没上架的枪 = 一张黑卡，**看不到任何数值** ──
+      // 为什么连价格都不给：价格是一种承诺（"攒够就能买"），而对一把还没解锁的枪，
+      // 攒钱根本不是当前的正确目标 —— 先把深度潜出来才是。名字保留，是因为
+      // 玩家需要知道"有什么在等我"；伤害 / 半径 / 机制 / 价格全部藏起来。
+      if (e.locked) {
+        return `${tierHead}
+        <div class="gs-item unreleased">
+          <div class="gs-h">
+            <span class="gs-ico">${glyph(g.icon, 22)}</span>
+            <div class="gs-t"><b>${g.name}</b><i>${g.en}</i></div>
+            <span class="gs-tag">未解锁</span>
+          </div>
+          <div class="gs-lockrow">${glyph('lock', 13)}<span>${e.lockText}</span></div>
+        </div>`;
+      }
       const stats = [
         `<span class="gs-st">伤害 ${delta(e.stat.damage, n && n.damage, num)}</span>`,
         `<span class="gs-st">范围 ${delta(e.stat.radius, n && n.radius, num)}</span>`,
@@ -769,7 +1045,7 @@ export class UI {
         : (e.owned ? '<span class="gs-tag">已拥有</span>' : '');
 
       return `${tierHead}
-        <div class="gs-item${e.current ? ' cur' : ''}${e.owned ? ' owned' : ' locked'}">
+        <div class="gs-item${e.current ? ' cur' : ''}${e.owned ? ' owned' : ' locked'}">${e.isNew ? '<i class="gs-new">NEW</i>' : ''}
           <div class="gs-h">
             <span class="gs-ico">${glyph(g.icon, 22)}</span>
             <div class="gs-t"><b>${g.name}</b><i>${g.en} · ${g.desc}</i></div>
@@ -787,7 +1063,8 @@ export class UI {
     return `
       <div class="wallet"><span class="lb">金币</span><span class="amt">${fmt(save.coins)}</span></div>
       <div class="p-note" style="margin:0 0 10px">
-        每把枪可升 <b>${GUN_MAX_LEVEL}</b> 级 · 「攻击力」是所有枪共用的伤害倍率，在渔具店里升。
+        每把枪可升 <b>${GUN_MAX_LEVEL}</b> 级 · 伤害只跟<b>这把枪自己的等级</b>走 ——
+        渔具店里没有「攻击力」这一项。
       </div>
       <div class="gs-list">${rows}</div>`;
   }
@@ -796,12 +1073,12 @@ export class UI {
   /**
    * 多地图的入口。每张图一张卡，卡上把「怎么才能去」摊开写清楚：
    *
-   *   ① 图鉴 ≥ 75%   —— 逼玩家把这张图真的玩透（去不同深度、钓不同的鱼）
-   *   ② 潜到过本图上限 —— 免费，但让"潜到底"成为明确目标
-   *   ③ 许可证金币    —— 辅助条件，只负责"让换图有一点成本感"
+   *   ⚠ **条件不写死在这里**（v0.7）：直接渲染 `game.mapProgress()` 给出的 `conds`
+   *   —— 现在是「钓到海图 + 有一艘船」两条，将来加图可能还有别的。
+   *   界面只负责画和点按钮，判断全在 game 那一层。
    *
-   * 三个条件**同时**列出来（而不是只显示最缺的那一个）：玩家能看到自己卡在哪一条，
-   * 也能看到"另外两条已经绿了"。数据全部来自 game.mapProgress —— 界面和判定
+   * 条件**同时**列出来（而不是只显示最缺的那一个）：玩家能看到自己卡在哪一条，
+   * 也能看到"另一条已经绿了"。数据全部来自 game.mapProgress —— 界面和判定
    * 共用同一个来源，不会出现"按钮亮了却买不了"。
    */
   _routeBody(save, handlers) {
@@ -812,23 +1089,21 @@ export class UI {
       const m = p.map;
       const cur = m.id === curId;
       const icon = m.id === 'calm-bay' ? 'wave' : 'iceberg';
-      const conds = [
-        { ok: p.codexOk, t: `图鉴 ${p.codex}/${p.codexTotal}` },
-        { ok: p.depthOk, t: `潜至 ${p.reached}/${p.maxD}m` },
-        { ok: p.affordable, t: `金币 ${fmtCost(p.price)}` },
-      ].map((c) => `<span class="rt-c ${c.ok ? 'ok' : ''}">${c.t}</span>`).join('');
+      // ⚠ v0.7：条件**不由界面写死**，而是读 game 给的 `p.conds`
+      //   （海图 / 船 / 将来加图时可能还有别的）。界面只渲染 + 点按钮 ——
+      //   判断留在 UI 里的话，"按钮亮了却买不了"会散得到处都是（和枪店同一条原则）。
+      const conds = p.conds.map((c) => `<span class="rt-c ${c.ok ? 'ok' : ''}">${c.text}</span>`).join('');
 
       let btn;
-      if (cur) btn = `<button class="buy max" disabled>当前所在</button>`;
-      else if (p.owned) btn = `<button class="rt-go" data-map="${m.id}">前 往</button>`;
-      else if (p.canBuy) btn = `<button class="rt-go" data-map="${m.id}">${coinIcon(12)} ${fmtCost(p.price)}</button>`;
-      else btn = `<button class="buy lock" disabled>条件未满</button>`;
+      if (cur) btn = '<button class="buy max" disabled>当前所在</button>';
+      else if (p.gateOk) btn = `<button class="rt-go" data-map="${m.id}">前 往</button>`;
+      else btn = '<button class="buy lock" disabled>条件未满</button>';
 
       const tag = cur ? '<span class="rt-tag on">当前</span>'
-        : (p.owned ? '<span class="rt-tag">已解锁</span>' : '');
+        : (p.gateOk ? '<span class="rt-tag">已解锁</span>' : '');
 
       return `
-        <div class="rt-item${cur ? ' cur' : ''}${p.owned ? ' owned' : ''}">
+        <div class="rt-item${cur ? ' cur' : ''}${p.gateOk ? ' owned' : ''}">
           <div class="rt-h">
             <span class="rt-ico">${glyph(icon, 20)}</span>
             <div class="rt-t"><b>${m.name}</b><i>${m.en}</i></div>
@@ -836,7 +1111,7 @@ export class UI {
           </div>
           <div class="rt-desc">${m.desc || ''}</div>
           <div class="rt-meta">深度 0 ~ −${p.maxD}m · ${zonesOfMap(m.id).length} 层海域 · 本图最深 −${p.reached}m</div>
-          ${(cur || p.owned) ? '' : `<div class="rt-conds">${conds}</div>`}
+          ${(cur || p.gateOk) ? '' : `<div class="rt-conds">${conds}</div>`}
           ${btn}
         </div>`;
     }).join('');
@@ -844,9 +1119,54 @@ export class UI {
     return `
       <div class="wallet"><span class="lb">金币</span><span class="amt">${fmt(save.coins)}</span></div>
       <div class="p-note" style="margin:0 0 10px">
-        换一片海需要：<b>本图图鉴 75%</b> · <b>潜到过本图上限</b> · <b>付许可证</b>。
+        去一片新的海要两样东西：<b>那张海图</b>（首图海沟最底部的宝箱里）+ <b>一艘船</b>（船厂，一万）。
       </div>
       <div class="rt-list">${rows}</div>`;
+  }
+
+  // ── App 内容：船厂（v0.7）────────────────────────────────
+  /**
+   * 三条船，同价 10,000，各带一个效果 —— 买**任意一艘**就能开去极地。
+   *
+   * 为什么同价：需求里就是这么定的（"支付 10000 元购买任意一艘新船"）。
+   * 同价 = 三条路等值，玩家的决策点是**玩法风格**（多卖钱 / 装得多 / 护钩子），
+   * 而不是"我还得再攒多少"。已拥有的船**免费换** —— 买断之后随便试。
+   *
+   * ⚠ 和枪店同一条原则：拥有 / 当前 / 买得起 全部由 game 算好传进来（`handlers.boatList`），
+   *   界面不做判断。
+   */
+  _boatBody(save, handlers) {
+    const list = (handlers.boatList && handlers.boatList()) || [];
+    const rows = list.map((e) => {
+      const d = e.def;
+      const hull = `#${(d.hull >>> 0).toString(16).padStart(6, '0')}`;
+      const trim = `#${(d.trim >>> 0).toString(16).padStart(6, '0')}`;
+      const tag = e.current ? '<span class="gs-tag on">出海中</span>'
+        : (e.owned ? '<span class="gs-tag">已拥有</span>' : '');
+      let btn;
+      if (e.current) btn = '<button class="buy max" disabled>当前船只</button>';
+      else if (e.owned) btn = `<button class="gs-go" data-boat-use="${d.id}">换 这 艘</button>`;
+      else if (e.affordable) btn = `<button class="gs-go" data-boat-buy="${d.id}">${coinIcon(12)} ${fmtCost(d.price)}</button>`;
+      else btn = `<button class="buy lock" disabled>${coinIcon(12)} ${fmtCost(d.price)}</button>`;
+      return `
+        <div class="bt-item${e.current ? ' cur' : ''}${e.owned ? ' owned' : ''}">
+          <div class="bt-h">
+            <span class="bt-ico" style="--hull:${hull};--trim:${trim}">${glyph('boat', 24)}</span>
+            <div class="bt-t"><b>${d.name}</b><i>${d.en}</i></div>
+            ${tag}
+          </div>
+          <div class="bt-eff">${d.desc}</div>
+          <div class="bt-tip">${d.tip}</div>
+          <div class="bt-foot">${btn}</div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="wallet"><span class="lb">金币</span><span class="amt">${fmt(save.coins)}</span></div>
+      <div class="p-note" style="margin:0 0 10px">
+        三条船<b>都是一万</b>，各带一个效果 —— 买<b>任意一艘</b>就能开去冰封极地。已拥有的船<b>免费换</b>。
+      </div>
+      <div class="bt-list">${rows}</div>`;
   }
 
   // ── App 内容：图鉴 ───────────────────────────────────────
@@ -856,8 +1176,12 @@ export class UI {
    * 未钓到的鱼：黑色剪影 + 名字锁成 ？？？，只透露"这一层有鱼"这个线索。
    */
   _codexBody(save, order) {
-    const licenses = save.licenses || [];
-    const groups = groupByMap(order, (m) => m.license <= 0 || licenses.includes(m.id));
+    // ⚠ v0.7：哪张图"已经可以去"不再看许可证（两张图的许可证都是 0 了），
+    //   而是看 game 的门槛判定（首图 = 天生拥有；其余图 = 海图 + 船）。
+    //   判断仍然只有一个来源 —— `mapProgress`，这里只是把它翻成"分组是否解锁"。
+    const routes = (this._phone && this._phone.handlers.mapList && this._phone.handlers.mapList()) || [];
+    const reachable = new Set(routes.filter((p) => p.owned).map((p) => p.map.id));
+    const groups = groupByMap(order, (m) => reachable.has(m.id));
     const got = order.filter((d) => save.codex[d.id]).length;
 
     return `
@@ -876,11 +1200,11 @@ export class UI {
         <div class="cx-map-desc">${g.map.desc || ''}</div>`;
 
       if (g.locked) {
-        // 有许可证价格 = 这张图已经做好了，只是玩家还没拿到 → 指路；
-        // 没有价格 = 还没做（MAPS 里 unlocked:false）→ 敬请期待。
+        // 有海域 = 这张图已经做好了，只是玩家还没到过 → 指路；
+        // 没海域 = 还没做（MAPS 里还没铺 ZONES）→ 敬请期待。
         return `<div class="cx-map">${head}
-          <div class="cx-locked-box">${g.map.license > 0
-            ? '尚未取得许可证 · 打开手机里的「航线」App 看看怎么去'
+          <div class="cx-locked-box">${zonesOfMap(g.map.id).length
+            ? '海域尚未抵达 · 打开手机里的「航线」App 看看怎么去'
             : '这片海域尚未开放 · 敬请期待'}</div>
         </div>`;
       }
@@ -1054,6 +1378,11 @@ export class UI {
     const escapes = r.escaped.length
       ? `<div class="escape-list">${r.escaped.map((n) => `<span>${n} 逃走了</span>`).join('')}</div>`
       : '';
+    // 超时收竿时还挂在天上的鱼（v0.6）。只报条数、不逐条列 ——
+    // 那一刻可能挂着十几条，逐条列会把面板撑爆；而且玩家要的是"我漏了几条"，不是"漏了哪几条"。
+    const timedOut = r.timedOut
+      ? `<div class="escape-list timedout"><span>时间到了 · 还有 ${r.timedOut} 条没打下来</span></div>`
+      : '';
 
     const card = this._card(`
       <h2>本 次 结 算</h2>
@@ -1067,6 +1396,7 @@ export class UI {
         <div class="rrow total"><span>本竿收入</span><b>${coinIcon(16)} ${fmt(r.earned)}</b></div>
       </div>
       ${escapes}
+      ${timedOut}
       <button class="btn gold" id="nextBtn">回 到 船 上</button>
     `);
     card.querySelector('#nextBtn').onclick = handlers.next;

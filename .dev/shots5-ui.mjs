@@ -63,8 +63,10 @@ try {
 
   // ── 图鉴：只解锁一部分鱼，验证"已知彩色 / 未知黑色剪影" ──
   await ev(`(()=>{ const g=window.__game;
+    // ⚠ 等级夹具从**当前存档的键集**推出来（升级项增删时自动跟上），不要手写键名
+    const LV = (o={}) => Object.fromEntries(Object.keys(g.save.levels).map(k=>[k, o[k]??0]));
     g.save = { coins: 1240, bestDepth: 210, bestAlt: 640, casts: 18, totalEarned: 5200,
-      levels:{line:2,hook:1,sinker:1,power:2,lamp:1}, codex:{
+      levels: LV({line:2,hook:1,sinker:1,lamp:1}), codex:{
         sardine:{n:9,best:7}, clown:{n:4,best:12}, mackerel:{n:3,best:17}, puffer:{n:2,best:9},
         blobfish:{n:1,best:33}, snapper:{n:2,best:26}, tuna:{n:1,best:44}, eel:{n:1,best:57},
         lantern:{n:1,best:68},

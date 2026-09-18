@@ -163,8 +163,8 @@ try {
   check('T6 手机里打开渔具店 App（状态仍是 idle，世界继续跑）',
     shop.phone === true && shop.app === 'shop' && shop.state === 'idle',
     `state=${shop.state} app=${shop.app}`);
-  check('T7 商店有 11 项升级（5 项基础 + 3 项新轴 + 3 项进阶）',
-    shop.items === 11, 'items=' + shop.items + ' → ' + shop.names.join('/'));
+  check('T7 商店有 7 项（4 基础 + 2 进阶 + 1 工具）',
+    shop.items === 7, 'items=' + shop.items + ' → ' + shop.names.join('/'));
   await shot('02-shop');
 
   // 给钱，逐项买满，验证数值真的变了
@@ -172,10 +172,11 @@ try {
   await ev('window.step(2)');
   const before = J(await ev(`JSON.stringify({
     maxDepth: window.__game.maxDepth, hookR: +window.__game.hook.radius.toFixed(2),
-    sink: window.__game.descendSpeed, lampR: window.__game.world.lampR,
+    sink: window.__game.descendSpeed, dropCap: window.__game.dropMax,
+    lampR: window.__game.world.lampR,
   })`));
   for (let i = 0; i < 4; i++) {
-    for (const k of ['line', 'hook', 'sinker', 'power', 'lamp']) {
+    for (const k of ['line', 'hook', 'sinker', 'lamp']) {
       await ev(`(()=>{const b=document.querySelector('#pApp .buy[data-k="${k}"]'); if(b&&!b.disabled) b.click(); return 'ok';})()`);
     }
   }
@@ -183,15 +184,42 @@ try {
   const after = J(await ev(`JSON.stringify({
     lv: window.__game.save.levels,
     maxDepth: window.__game.maxDepth, hookR: +window.__game.hook.radius.toFixed(2),
-    sink: window.__game.descendSpeed, lampR: window.__game.world.lampR,
+    sink: window.__game.descendSpeed, dropCap: window.__game.dropMax,
+    lampR: window.__game.world.lampR,
     lampP: +window.__game.world.lampP.toFixed(2),
     lineLimitTop: document.querySelector('#ruler .limit').style.top,
   })`));
   check('T8 鱼线升级 → 最大下潜深度 840', after.maxDepth === 840 && before.maxDepth === 320, `${before.maxDepth} → ${after.maxDepth}`);
   check('T9 鱼钩升级 → 判定半径 17.6', after.hookR === 17.6 && before.hookR === 8, `${before.hookR} → ${after.hookR}`);
-  check('T10 铅坠升级 → 下潜速度 136', after.sink === 136 && before.sink === 64, `${before.sink} → ${after.sink}`);
+  check('T10 铅坠升级 → 直达深度上限 430（下潜速度已是常量，不再随等级变）',
+    after.dropCap === 430 && before.sink === 100 && after.sink === 100,
+    `直达上限 ${before.dropCap} → ${after.dropCap}m；下潜速度恒为 ${after.sink}`);
   check('T11 灯具升级 → 照亮半径 240', after.lampR === 240 && before.lampR === 52, `${before.lampR} → ${after.lampR}`);
-  check('T12 攻击力满级', after.lv.power === 4, 'power=' + after.lv.power);
+
+  // T12：绞盘是一次性工具 —— 买一次变「已拥有」，按钮不再可点。
+  // ⚠ 这条盯的是 `maxLvOf`：写死 MAX_LEVEL 的话 lv=1 时会被判成"还能买"，
+  //   给出一个价格 Infinity、永远点不动的按钮。
+  // ⚠⚠ v0.6 起绞盘是**分段解锁**的（`unlockMap: 'polar'`）：在宁静海湾它显示「未解锁」，
+  //   根本点不动 —— 所以这段先把极地许可证塞进存档，让它回到货架上。
+  //   （"没证时显示未解锁"由 verify7 的 B10 守，不要在这里重复验。）
+  const winch = J(await ev(`JSON.stringify((()=>{
+    // v0.7 第二批：解锁判定改成"到没到过那张图"（许可证退役）
+    window.__game.save.chart = true;
+    window.__game.save.boats = { owned: ['golden'], current: 'golden' };
+    window.__game.save.coins = 9999999;
+    window.__game.ui.refreshApp();
+    const pick = () => document.querySelector('#pApp .buy[data-k="winch"]');
+    const b0 = pick();
+    const lv0 = window.__game.save.levels.winch;
+    const txt0 = b0.textContent.trim();
+    b0.click(); window.step(1);
+    const b1 = pick();
+    return { lv0, txt0, lv1: window.__game.save.levels.winch,
+             txt1: b1.textContent.trim(), dis1: b1.disabled, lvLabel: b1.closest('.item').querySelector('.lv').textContent.trim() };
+  })())`));
+  check('T12 绞盘是一次性工具：买一次即「已拥有」且按钮不可再点',
+    winch.lv0 === 0 && winch.lv1 === 1 && winch.dis1 === true && winch.txt1 === '已拥有' && winch.lvLabel === '已拥有',
+    `Lv ${winch.lv0}→${winch.lv1} · 按钮「${winch.txt0}」→「${winch.txt1}」disabled=${winch.dis1} · 标签「${winch.lvLabel}」`);
 
   // 收起手机回到船上
   await ev('window.__game.closePhone()');

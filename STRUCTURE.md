@@ -3,7 +3,8 @@
 > **概述**：本文把仓库里的每一个文件按「职责分层」归类，说明它是什么、属于哪一层、被谁依赖。
 > 目标是一份**打开即懂**的地图 —— 任何人（或任何 AI）接手这个项目，看这一页就知道"想改的东西在哪"。
 >
-> **状态**：与代码同步（核对自磁盘实况）。截至 2026-09-16：`src` 10 个模块共 7,184 行，`.dev` 35 个脚本共 6,942 行，文档 3 份共 3,256 行。
+> **状态**：与代码同步（核对自磁盘实况）。截至 2026-09-17：`src` 10 个模块共 7,184 行，`.dev` 脚本 32 个（+ `archive/` 11 个），根文档 5 份 + `docs/` 7 份。
+> **本文只描述结构与职责，不复制数值，也不手写行数** —— 行数见 §2 的「体积快照」（由 `.dev/loc.mjs` 生成）。
 > **唯一数值来源是 `src/config.js`** —— 本文只描述结构，不复制数值，数值请以代码为准。
 >
 > **读者**：接手本项目的开发者 / 审阅者，以及需要理解代码组织的 AI 助手。
@@ -20,7 +21,7 @@
 ③ 逻辑层   game.js · input.js · audio.js               ← 主循环与状态机 / 输入 / 音效
 ④ 界面层   ui.js · icons.js · codex.js                 ← DOM 覆盖层 / SVG 图标 / 图鉴
 ⑤ 载体层   index.html · styles.css · vendor/           ← 页面骨架 / 样式 / Three.js 本体
-⑥ 文档层   README.md · DESIGN.md · EXPANSION.md · STRUCTURE.md
+⑥ 文档层   README.md · DESIGN.md · EXPANSION.md · GAMEPLAY.md · STRUCTURE.md
 ⑦ 辅助层   .dev/ · shots-v2/ · .workbuddy-ai/memory/
 ```
 
@@ -37,6 +38,7 @@
 ├── README.md                       ← 玩法 + 部署（面向玩家/使用者）
 ├── DESIGN.md                       ← 设计推演 + 迭代 1~10 踩坑记录（面向开发）
 ├── EXPANSION.md                    ← 5 地图 / 92 鱼 / 8 枪的扩建方案（面向未来）
+├── GAMEPLAY.md                     ← 玩法设计：目标 / 机制 / 联动 / 平衡 / 解锁节奏 / 风险清单
 ├── STRUCTURE.md                    ← 本文（文件结构与分层）
 ├── docs/                           ← 📊 数值与剧情参考文档（01~06 **由脚本生成**，改 config.js 后重跑）
 │   ├── README.md                   ←    索引 + 「想改什么 → 改哪里」速查 + 维护规则（手写）
@@ -87,7 +89,7 @@
 
 | 文件 | 作用 | 依赖 |
 |---|---|---|
-| `src/world.js` | 场景、正交缩放相机、光照、水体、太空、深海地形（固定种子 PRNG）、暗幕、爆炸与粒子池、船与渔夫的摇晃动画。导出 `World` 类 + 工具函数 `toonMat()` `mergeGeos()` `makeGlowTexture()` | 无本地依赖（最底层） |
+| `src/world.js` | 场景、正交缩放相机、光照、水体、太空、深海地形（固定种子 PRNG）、暗幕、爆炸与粒子池、船与渔夫（**含 v0.7 的船只皮肤**：金帆 / 货箱堆 / 首装甲板）、**首图海床 + 宝箱**。导出 `World` 类 + 工具函数 `toonMat()` `mergeGeos()` `makeGlowTexture()` | 无本地依赖（最底层） |
 | `src/fish.js` | 鱼类造型工厂 `buildFishModel()`（`LatheGeometry` 旋转体 + 卡通阶梯着色 + 特征构件）、六种游动/飞行行为、三轴翻滚、血量、对象池、鱼群生成。导出 `Fish` / `FishManager` / `FISH_STATE` | `config` `world` |
 | `src/hook.js` | 鱼钩与鱼线、渔获串排布 `layoutCatch()`、线段扫掠碰撞 `distToSegment()`。导出 `Hook` | `config` `world` |
 
@@ -103,8 +105,8 @@
 
 | 文件 | 作用 | 依赖 |
 |---|---|---|
-| `src/ui.js` | HUD、**枪械条**、深度尺、**手机外壳 + 5 个 App**（渔具店 / 枪店 / 图鉴 / 航线 / 设置）、结算面板、标题页、飘字。导出 `UI` | `codex` `icons` |
-| `src/icons.js` | 内联 SVG 图标库，共 36 个 `GLYPH` + 1 个 `coinIcon`（合计 37 个图标，覆盖 HUD / 5 个 App / 11 项升级 / **7 把枪** / 场景）。全界面**零 emoji** 靠它兜住。导出 `GLYPH` `glyph()` `iconText()` `coinIcon()` `heartRow()` | 无 |
+| `src/ui.js` | HUD、**枪械条**、深度尺、**手机外壳 + 7 个 App**（电话 / 渔具店 / 枪店 / 图鉴 / 航线 / **船厂**（要解锁）/ 设置）、**来电界面**、结算面板、标题页、飘字。导出 `UI` | `codex` `icons` |
+| `src/icons.js` | 内联 SVG 图标库，共 37 个 `GLYPH` + 1 个 `coinIcon`（合计 38 个图标，覆盖 HUD / **7 个 App**（含船厂）/ **6 项升级 + 1 件工具** / **7 把枪** / 场景）。全界面**零 emoji** 靠它兜住。导出 `GLYPH` `glyph()` `iconText()` `coinIcon()` `heartRow()` | 无 |
 | `src/codex.js` | 图鉴两级排序（地图 → 海域 → 身价）+ canvas 2D 程序化鱼图标（彩色 / 黑色剪影共用同一套特征参数）。导出 `codexOrder()` `groupByMap()` `zoneLabel()` `mapLabel()` `drawFishIcon()` | `config` |
 
 ### ⑤ 载体层
@@ -118,37 +120,38 @@
 <!-- LOC:BEGIN — 由 .dev/loc.mjs 生成，不要手改（改了文件跑 `node .dev/loc.mjs`）-->
 ### 体积快照
 
-**代码**（自有，合计 9,676 行）
+**代码**（自有，合计 11,715 行）
 
 | 文件 | 行数 |
 |---|---:|
-| `src/game.js` | 1,949 |
-| `src/world.js` | 1,802 |
-| `styles.css` | 1,546 |
-| `src/config.js` | 1,242 |
-| `src/ui.js` | 1,087 |
+| `src/game.js` | 2,641 |
+| `styles.css` | 2,040 |
+| `src/world.js` | 1,938 |
+| `src/config.js` | 1,585 |
+| `src/ui.js` | 1,417 |
 | `src/fish.js` | 787 |
 | `src/codex.js` | 408 |
-| `src/icons.js` | 315 |
+| `src/icons.js` | 327 |
 | `src/hook.js` | 194 |
 | `src/audio.js` | 164 |
-| `index.html` | 99 |
+| `index.html` | 131 |
 | `src/input.js` | 83 |
 
-**文档**（合计 4,558 行；`STRUCTURE.md` 本文不计 —— 它会被本脚本改写，写进去就成自指循环了）
+**文档**（合计 6,406 行；`STRUCTURE.md` 本文不计 —— 它会被本脚本改写，写进去就成自指循环了）
 
 | 文件 | 行数 |
 |---|---:|
-| `DESIGN.md` | 1,703 |
-| `EXPANSION.md` | 1,293 |
-| `README.md` | 627 |
-| `docs/04-物理与经济.md` | 159 |
-| `docs/05-剧情与世界观.md` | 156 |
-| `docs/03-升级与成本.md` | 154 |
+| `DESIGN.md` | 2,420 |
+| `EXPANSION.md` | 1,333 |
+| `GAMEPLAY.md` | 854 |
+| `README.md` | 751 |
+| `docs/05-剧情与世界观.md` | 265 |
+| `docs/04-物理与经济.md` | 178 |
 | `docs/02-鱼类图鉴.md` | 146 |
-| `docs/01-世界与地图.md` | 114 |
-| `docs/06-枪械.md` | 112 |
-| `docs/README.md` | 94 |
+| `docs/06-枪械.md` | 127 |
+| `docs/01-世界与地图.md` | 117 |
+| `docs/03-升级与成本.md` | 116 |
+| `docs/README.md` | 99 |
 
 > 另有 `vendor/three.module.js`（第三方 Three.js r160，53,044 行）—— 不计入上表。
 > 行数**由 `.dev/loc.mjs` 生成**，不是手写的：手写的派生数据一定会漂（这张表曾经 13 个数字全过期）。
@@ -158,9 +161,10 @@
 
 | 文件 | 读者 | 内容 |
 |---|---|---|
-| `README.md` | 玩家 / 使用者 | 玩法三段式循环、手机界面（5 个 App）、11 项升级、**7 把枪与枪店**、图鉴、本地运行、GitHub Pages 三种部署方式、技术要点、开发辅助脚本清单 |
+| `README.md` | 玩家 / 使用者 | 玩法三段式循环、手机界面（7 个 App，含船厂）、**电话引导**、6 项升级 + 1 件工具、**7 把枪与枪店**、图鉴、本地运行、GitHub Pages 三种部署方式、技术要点、开发辅助脚本清单 |
 | `DESIGN.md` | 开发者 | 原作玩法拆解、坐标系、状态机、数值设计、验收标准 + **迭代 1~11 全过程踩坑记录** |
 | `EXPANSION.md` | 规划者 | 5 地图 / 92 鱼 / 8 枪 / 弱剧情的扩建方案 + 分 8 批的落地路线（批 1~3 已完成） |
+| `GAMEPLAY.md` | 策划 / 平衡调整者 | **玩法设计文档**：设计目标与核心体验、机制构成、系统联动、数值与平衡思路、解锁节奏与引导、**风险点清单**。含一段由 `.dev/pace.mjs` 生成的「节奏验算」 |
 | `STRUCTURE.md` | 接手者 / AI | 本文：文件分层与作用 |
 | `docs/`（7 份） | 调数值 / 写文案的人 | **唯一的数值与文案参考**。`README.md` 是手写索引；`01~06` **由 `.dev/gen-docs.mjs` 从 `src/config.js` 生成** —— 手改会被下次生成覆盖 |
 
@@ -173,7 +177,7 @@
 
 | 路径 | 规模 | 作用 |
 |---|---|---|
-| `.dev/` | 27 个 `.mjs`（+ `archive/` 9 个） | CDP 无头 Chrome 真跑游戏的验证 / 出图 / 探针脚本，详见 §3。**脚本本体进仓库**，产物（`profile-*/` `shots-*/` `*.json` `*.log`）进 `.gitignore` |
+| `.dev/` | 32 个 `.mjs`（+ `archive/` 11 个） | CDP 无头 Chrome 真跑游戏的验证 / 出图 / 探针脚本，详见 §3。**脚本本体进仓库**，产物（`profile-*/` `shots-*/` `*.json` `*.log`）进 `.gitignore` |
 | `docs/` | 6 份 md | 数值与剧情参考文档（01~05 由 `.dev/gen-docs.mjs` 生成），详见 §2 ⑥ |
 | `shots-v2/` | 22 张 PNG，约 1.75 MB | 旧版人工复核截图（已在 `.gitignore`） |
 | `.workbuddy-ai/memory/` | 4 个 md | AI 工作记忆与开发日志（已在 `.gitignore`） |
@@ -185,13 +189,16 @@
 
 | 类别 | 文件 | 说明 |
 |---|---|---|
-| **回归断言（8 套）** | `verify.mjs`（迭代 2 基线）· `verify3~9.mjs` | 主力回归。批 1 → `verify7`，批 2 → `verify8`，批 3（枪械）→ `verify9`。当前 **verify9 43 + verify8 47 + verify7 39 + verify6 52 + verify5 34 + verify4 25 + verify3 34 = 274 条全绿** |
-| **数值验算（3 套）** | `curves.mjs` · `balance.mjs` · `balance-v2.mjs` | 升级曲线自检/导出、AI 代理玩家手感抽样、经济模型离线模拟 |
-| **文档生成（2 套）** | `gen-docs.mjs` · `loc.mjs` | `gen-docs.mjs`：**从 `src/config.js` 生成 `docs/01~06`**。`loc.mjs`：**把各文件行数生成进本文的「体积快照」**（手写的行数曾经 13 个数字全过期）。两者的 `check` 子命令都只校验不写盘，不一致则退出码 1 |
-| **出图复核（13 套）** | `shots2/3/4/5-fish/5-ui/6` · `shots-icons` · `shots-shop` · `shots-polar` · `shots-guns` · **`shots-phone`** · `boom` · `_shots-v02` | 断言测不到"好不好看"，靠这些出图人工复核 |
+| **回归断言（7 套）** | `verify3~9.mjs` | 主力回归。批 1 → `verify7`，批 2 → `verify8`，批 3（枪械）→ `verify9`，批 v0.5（删 4 项 + 重做铅坠/绞盘）→ `verify3/7/9` 增量，批 v0.6（来电引导）→ `verify6` 增量，批 v0.6 第一批风险处置（分段解锁 / 内容门槛 / 超时鱼 / 夹具门禁）→ `verify3/6/7/8` 增量。当前 **verify3 34 + verify4 25 + verify5 34 + verify6 63 + verify7 47 + verify8 50 + verify9 51 = 304 条全绿** |
+| **已失效（1 套）** | `.dev/verify.mjs` | 迭代 2 的 31 条基线。**从 v0.4 起就是坏的** —— 它引用 `g.blast`，而枪械系统早就删了那个字段。⚠ 跑全部回归时**不要把它算进去**，否则会误以为代码坏了；要么按当前 API 重写，要么保持忽略 |
+| **夹具（1 个共享模块）** | `fixtures.mjs` | 回归脚本共用的**完整存档夹具构造器**（`levelsOf` / `gunLevelsOf` / `saveOf`）。**不许手写 `levels` 字面量** —— 这个项目被"手写夹具漏键"坑过两次（症状是"不报错、不闪退，只是鱼再也钓不上来"）。门禁 = `verify7` 的 **A9**：扫全部 `.dev` 脚本，`levels: {` 必须来自构造器、或含展开 `...`、或带 `@partial-save` 标记 |
+| **数值验算（4 套）** | `curves.mjs` · `balance.mjs` · `balance-v2.mjs` · **`pace.mjs`** | 升级曲线自检/导出、AI 代理玩家手感抽样、经济模型离线模拟、**玩法节奏验算**（逐竿推进模拟「升一级要几竿 / 换图门槛哪个先松」，结果写进 `GAMEPLAY.md`；生成前先跑 `assertLevelAnchors()` 与 `assertGateReachable()` 两组**会挂**的结构断言） |
+| **文档生成（3 套）** | `gen-docs.mjs` · `loc.mjs` · `pace.mjs` | `gen-docs.mjs`：**从 `src/config.js` 生成 `docs/01~06`**。`loc.mjs`：**把各文件行数生成进本文的「体积快照」**（手写的行数曾经 13 个数字全过期）。`pace.mjs`：**把节奏验算表生成进 `GAMEPLAY.md`**。三者的 `check` 子命令都只校验不写盘，不一致则退出码 1 |
+| **出图复核（13 套 + 2 个一次性探针）** | `shots2/3/4/5-fish/5-ui/6` · `shots-icons` · `shots-shop` · `shots-polar` · `shots-guns` · **`shots-phone`** · `boom` · `_shots-v02`<br>`.dev/archive/` 下 2 个：`_shots-v05`（删 4 项 + 铅坠/绞盘）· `_shots-call`（来电引导） | 断言测不到"好不好看"，靠这些出图人工复核 |
 | **诊断探针 / 一次性（14 个）** | `smoke.mjs` · `probe-coin/coinfit/d1/emoji/roww.mjs`（在 `.dev/` 根）<br>`.dev/archive/` 下 9 个：`_dbg` · `_probe-air/aurora/codex/roww2/slow` · `_shots-v02` · `_splice-wide/cost` | 定位静默失败、字体缺字形、宽度挤压等问题的一次性脚本。**带 `_` 前缀的 9 个已归档到 `.dev/archive/`**（不再参与常规回归），路径仍按**项目根**解析 —— 跑法为 `node .dev/archive/_xxx.mjs`。⚠️ `_splice-*.mjs` 会覆写 `DESIGN.md` / `EXPANSION.md` 的表格，非必要勿跑 |
 
-> **完整清单**（36 个脚本逐个的一句话作用）见 [`README.md` 的「开发辅助」](./README.md#开发辅助)；本表只做归类。
+> **完整清单**（逐个脚本的一句话作用）见 [`README.md` 的「开发辅助」](./README.md#开发辅助)；本表只做归类 ——
+> 这里**刻意不写脚本总数**：加一个探针就要来改一次数字，而这个项目已经因为手抄派生数据翻过四次车。
 > 下表用简写（如 `verify3~8.mjs` 指 `verify3.mjs` 到 `verify8.mjs` 共 6 个）。
 
 **跑法**（先另开终端起静态服务器）：
@@ -201,7 +208,11 @@ python -m http.server 8899
 node .dev/verify8.mjs http://127.0.0.1:8899/index.html
 node .dev/curves.mjs check        # 改完 config.js 数值看这个
 node .dev/gen-docs.mjs check      # 改完 config.js 数值 → 校验 docs/ 有没有跟着过期
+node .dev/pace.mjs                # 改完 config.js 数值 → 重算 GAMEPLAY.md 的「节奏验算」
+                                  #   ⚠ 生成前会跑两组**会挂**的结构断言：等级闸门锚点（B3）
+                                  #     与内容门槛双侧平衡（A10：既不能形同虚设、也不能成为主墙）
 node .dev/loc.mjs check           # 改完任何文件 → 校验本文的「体积快照」有没有跟着过期
+                                  #   ⚠ 顺序：pace.mjs 会改写 GAMEPLAY.md 的行数，所以它必须排在 loc.mjs 之前
 node .dev/verify9.mjs            # 改完枪械 / 血量看这个
 node .dev/shots-icons.mjs http://127.0.0.1:8899/index.html   # 改完 icons.js 看这个
 node .dev/shots-guns.mjs         # 改完枪店 / 枪械条 / 枪械图标看这个
@@ -249,6 +260,7 @@ node .dev/shots-phone.mjs        # 改完手机界面（增删按钮 / 改间距
 | 音效 | `src/audio.js` |
 | 页面骨架 / importmap | `index.html` |
 | 鱼的文案 / 地图简介 | `src/config.js` 的 `desc` 字段（改完跑 `gen-docs.mjs`，会同步进 `docs/05`） |
+| **玩法节奏 / 平衡性 / 换图门槛够不够硬** | 先看 [`GAMEPLAY.md`](./GAMEPLAY.md) 的第六章风险清单；要重算节奏跑 `node .dev/pace.mjs` |
 
 ---
 

@@ -281,50 +281,10 @@ canvas#game {
   box-shadow: 0 0 16px rgba(255, 204, 51, 0.55), 0 3px 10px rgba(0, 0, 0, 0.5);
 }
 
-/* ── 声呐探测带（升级项 sonar，0 级时整层不出现）──
-   青色的半透明带 = "鱼钩周围能看到的范围"，带里的青色/金色小刻度 = 鱼的位置。
-   金色刻度是值钱的鱼（身价 ≥ 120），让你一眼判断"值不值得再往下放"。 */
-.ruler .sonar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-}
-.ruler .sonar.on { opacity: 1; }
-.ruler .sonar .s-band {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border-radius: 5px;
-  background: linear-gradient(
-    180deg,
-    rgba(96, 228, 255, 0.03),
-    rgba(96, 228, 255, 0.22),
-    rgba(96, 228, 255, 0.03)
-  );
-  border-top: 1px solid rgba(130, 238, 255, 0.55);
-  border-bottom: 1px solid rgba(130, 238, 255, 0.55);
-  box-shadow: inset 0 0 14px rgba(96, 228, 255, 0.28);
-}
-.ruler .sonar .s-blips { position: absolute; inset: 0; }
-.ruler .sonar .s-blip {
-  position: absolute;
-  left: 3px;
-  width: 15px;
-  height: 3px;
-  margin-top: -1.5px;
-  border-radius: 2px;
-  background: #8ef0ff;
-  box-shadow: 0 0 7px rgba(120, 236, 255, 0.95);
-}
-.ruler .sonar .s-blip.hot {
-  background: #ffcc33;
-  box-shadow: 0 0 8px rgba(255, 204, 51, 0.95);
-}
+/* ── 声呐探测带（v0.5 已随「声呐」升级项一起移除）──
+   原来这里是一段青色的半透明带 + 带内鱼的位置刻度。需要的话去 git 历史里找；
+   对应的 DOM（.ruler .sonar / .s-band / .s-blips / .s-blip）也一并删掉了，
+   留着空样式只会让下一个人以为它还在生效。 */
 
 /* ── 区域横幅 ── */
 .zone-banner {
@@ -465,6 +425,49 @@ canvas#game {
   50% { transform: translateY(-3px); }
 }
 
+/* ── 快速回收按钮（绞盘，v0.5）──
+   只在**上升阶段 + 已买绞盘**时出现，位置放在收线按钮的左边一点。
+   和 .reel-btn 的区别要一眼看出来：收线是金色（"该拉上来了"的提示），
+   快速回收是青色（"要不要加速"的选择）—— 两个都是按钮、都出现在同一个位置附近，
+   如果同色同形，玩家会以为它们是同一个东西的两种状态。 */
+.fast-reel-btn {
+  position: absolute;
+  right: 18px;
+  bottom: calc(96px + var(--safe-b));
+  pointer-events: auto;
+  display: none;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 18px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #b8f2ff, #4fd2f0 45%, #1c9dc4);
+  color: #04303f;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  box-shadow: 0 6px 0 #0f6b88, 0 12px 22px rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  animation: fastReelPulse 0.9s ease-in-out infinite;
+}
+.fast-reel-btn.on { display: inline-flex; }
+.fast-reel-btn:active { transform: translateY(3px); box-shadow: 0 3px 0 #0f6b88, 0 7px 14px rgba(0, 0, 0, 0.45); }
+.fast-reel-btn .ico { display: flex; }
+.fast-reel-btn .ico svg { display: block; }
+/* 按过之后留在屏幕上但变灰：玩家需要看到"我按过了"这个回执，
+   否则会怀疑自己没按中，然后一直戳（见 ui.setFastReel 的注释）。 */
+.fast-reel-btn.used {
+  animation: none;
+  background: linear-gradient(180deg, #9fb4bd, #6d8792 45%, #4c6470);
+  color: #1b2b33;
+  box-shadow: 0 4px 0 #35474f, 0 8px 16px rgba(0, 0, 0, 0.4);
+  cursor: default;
+}
+@keyframes fastReelPulse {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
 /* ── 枪械条（空中射击阶段）── */
 /* 空中阶段没有收线按钮、没有手机入口，这条就是画面里唯一要读的 HUD。
    弹匣 / 换弹进度 / 激光递增都挤在这一条里，所以刻意做得窄而扁。
@@ -521,32 +524,180 @@ canvas#game {
 }
 .gun-bar.hot .gb-meter b { background: linear-gradient(90deg, #ffcc33, #ff5a3d); }
 
-/* ── 手机入口按钮（待机时出现在屏幕左下角） ── */
+/* ── 手机入口按钮（待机时出现在屏幕左下角） ──
+   v0.7：按钮本体改成**一部小手机**（机身 + 屏幕 + 听筒 + HOME 条），不再是"图标 + 文字"。
+   为什么：它在待机界面左下角一直在，本来就是玩家看得最多的那个东西 ——
+   画成手机之后，"点它能打开手机"这件事不需要一个字来解释。
+   ⚠ 里面那层 `.ph-screen` 就是 `#phoneIco`（SVG 由 ui._fillIcons 注入），
+     不要把 id 挪到外层 —— verify 一直在按 id 找它。 */
 .phone-btn {
   position: absolute;
   left: 18px;
-  bottom: calc(28px + var(--safe-b));
+  bottom: calc(26px + var(--safe-b));
   pointer-events: auto;
   display: none;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 22px;
-  border: 1px solid rgba(140, 210, 255, 0.34);
-  border-radius: 999px;
-  background: rgba(5, 24, 42, 0.86);
-  color: var(--txt);
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  padding: 0;
+  width: 46px;
+  height: 78px;
+  border: none;
+  background: none;
   cursor: pointer;
+  transform-origin: 50% 90%;
+  -webkit-tap-highlight-color: transparent;
 }
-.phone-btn .ico { display: inline-flex; }
-.phone-btn .ico svg { display: block; width: 19px; height: 19px; }
-.phone-btn.on { display: inline-flex; }
-.phone-btn:active { transform: translateY(3px) scale(0.98); }
+.ph-body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  border: 1px solid rgba(160, 220, 255, 0.42);
+  background: linear-gradient(160deg, #123350, #061726 60%, #04101c);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+/* 听筒 + HOME 条：两个极小的细节，但它们才是"这是一部手机"的读图关键 */
+.ph-notch {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(160, 220, 255, 0.4);
+}
+.ph-body::after {
+  content: '';
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(160, 220, 255, 0.3);
+}
+.ph-screen { display: inline-flex; color: var(--txt); opacity: 0.94; }
+.ph-screen svg { display: block; width: 22px; height: 22px; }
+.phone-btn.on { display: block; }
+.phone-btn:active { transform: translateY(2px) scale(0.97); }
+.phone-btn:active .ph-body { border-color: rgba(255, 204, 51, 0.6); }
+
+/* ── 来电：手机晃动（v0.7 加强）─────────────────────────────
+   这是"手机响了"的第一层信号 —— 不弹全屏遮罩，只是让入口自己动起来。
+   ⚠ 晃动挂在按钮上而不是给整个 HUD 加动画：全屏抖会把玩家的视线从画面上拽走，
+     而我们要的是"余光扫到手机在响"。 */
+.phone-btn.ringing { animation: phoneRing 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite; }
+.phone-btn.ringing .ph-body {
+  border-color: rgba(255, 204, 51, 0.85);
+  box-shadow: 0 0 22px rgba(255, 204, 51, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.phone-btn.ringing .ph-screen { color: var(--gold); }
+.phone-btn.ringing::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 204, 51, 0.5);
+  animation: phoneHalo 1.1s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes phoneRing {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  15% { transform: rotate(-7deg) translateX(-3px); }
+  35% { transform: rotate(7deg) translateX(3px); }
+  55% { transform: rotate(-5deg) translateX(-2px); }
+  75% { transform: rotate(4deg) translateX(2px); }
+}
+@keyframes phoneHalo {
+  0% { transform: scale(0.94); opacity: 0.9; }
+  100% { transform: scale(1.22); opacity: 0; }
+}
+
+/* ── 来电卡片：模仿 iPhone 来电界面（v0.7）──────────────────
+   从**屏幕上方**滑入的一张来电卡：圆形头像 + 来电人 + 「来电中…」+ 挂断 / 接听两个圆钮。
+   **刻意不是全屏遮罩**：待机时玩家可能正要点画面抛竿，
+   一个全屏来电界面会把"我在做决定"打断成"我必须先处理这个"（见 config 的 CALLS 四条硬约束）。
+   ⚠ 卡片以外的地方**照样能点** —— 想无视就无视，下一帧回待机它还会响（因为还没听）。 */
+.ios-call {
+  position: absolute;
+  left: 50%;
+  /* ⚠ 起点压在顶栏**下面**：顶栏那一行是金币 / 深度 / 静音，来电卡盖住它会看不清钱
+     （出图第一版就是盖住的，所以这里留出 46px）。 */
+  top: calc(46px + var(--safe-t));
+  width: min(92%, 360px);
+  transform: translate(-50%, -160%);
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(38, 42, 52, 0.94), rgba(16, 19, 26, 0.95));
+  color: #fff;
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: transform 0.5s cubic-bezier(0.16, 1.16, 0.3, 1), opacity 0.3s ease;
+  cursor: pointer;
+  z-index: 7;
+}
+.ios-call.on { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.ios-ava {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  background: radial-gradient(circle at 34% 28%, #7fd4f0, #2b6f95 65%, #1b4c6b);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  animation: iosAva 1.6s ease-in-out infinite;
+}
+.ios-ava.shop { background: radial-gradient(circle at 34% 28%, #ffe17a, #c8892a 68%, #8a5a12); }
+.ios-ava.gunshop { background: radial-gradient(circle at 34% 28%, #ff9a7a, #b3452c 68%, #7a2a17); }
+.ios-ava svg { display: block; width: 20px; height: 20px; }
+.ios-txt { display: flex; flex-direction: column; line-height: 1.3; flex: 1 1 auto; min-width: 0; }
+.ios-txt b { font-size: 14px; font-weight: 800; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ios-txt i { font-size: 11px; font-style: normal; color: rgba(255, 255, 255, 0.62); animation: iosBlink 1.5s ease-in-out infinite; }
+.ios-btns { display: inline-flex; gap: 9px; flex: 0 0 auto; }
+.ios-btn {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ios-btn svg { display: block; width: 19px; height: 19px; }
+.ios-btn.accept { background: linear-gradient(180deg, #5fe08a, #23a253); box-shadow: 0 4px 12px rgba(35, 162, 83, 0.45); animation: iosAccept 1.5s ease-in-out infinite; }
+.ios-btn.decline { background: linear-gradient(180deg, #ff7b6b, #d1301c); box-shadow: 0 4px 12px rgba(209, 48, 28, 0.42); }
+.ios-btn.decline svg { transform: rotate(134deg); }   /* 同一个听筒图标转过去就是"挂断" */
+.ios-btn:active { transform: scale(0.92); }
+.ios-call:active { transform: translate(-50%, 2px) scale(0.995); }
+@keyframes iosAva {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 0 0 0 rgba(255, 255, 255, 0.18); }
+  50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 0 0 6px rgba(255, 255, 255, 0); }
+}
+@keyframes iosAccept {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+}
+@keyframes iosBlink {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
 
 /* ── 提示 ── */
 /* 需求⑧：去掉黑底，改用亮点字体，透明度做呼吸变化 */
@@ -768,6 +919,178 @@ canvas#game {
   font-weight: 700;
 }
 
+/* ── 铅坠的「直达深度」控件（v0.5）───────────────────────
+   挂在铅坠那一行**下面**，缩进对齐 `.item .info` 那一列（图标 40px + 间距）。
+   它必须看起来像"这一行的附属品"而不是新的一行 —— 否则玩家读不出
+   "这个开关是我买的那个铅坠的用法"。 */
+.drop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 2px 46px;      /* 上负边距：贴到铅坠那一行的下沿 */
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(96, 228, 255, 0.06);
+  border: 1px solid rgba(96, 228, 255, 0.16);
+}
+.drop-row.off { opacity: 0.45; }
+.drop-tg {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--txt-dim);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.drop-tg.on { background: rgba(96, 228, 255, 0.22); color: #9ceaff; box-shadow: inset 0 0 0 1px rgba(96, 228, 255, 0.45); }
+.drop-tg[disabled] { opacity: 0.5; cursor: not-allowed; }
+.drop-dep { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.drop-st {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--txt);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+.drop-st:active { transform: translateY(1px); }
+.drop-st[disabled] { opacity: 0.32; cursor: not-allowed; }
+.drop-val { min-width: 54px; text-align: center; font-size: 12px; font-weight: 800; color: #9ceaff; }
+.drop-hint {
+  margin: 0 0 10px 46px;
+  font-size: 10px;
+  color: var(--txt-dim);
+  letter-spacing: 0.02em;
+}
+
+/* ── 电话 App（v0.6）──────────────────────────────────────
+   来电界面刻意做成"一张竖着的通话卡"：头像 / 名字 / 状态 / 气泡对话 / 按钮。
+   它和商店那种信息密集的列表完全不同 —— 这里只有一个人在跟你说话。 */
+.call-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 16px 18px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(20, 40, 60, 0.9), rgba(10, 22, 36, 0.92));
+  border: 1px solid rgba(140, 210, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.call-ava {
+  width: 66px;
+  height: 66px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  animation: callAvaPulse 1.6s ease-in-out infinite;
+}
+.call-ava svg { display: block; }
+.call-ava.shop { background: linear-gradient(158deg, #ffdd7a, #e08b12); }
+.call-ava.gunshop { background: linear-gradient(158deg, #ffb37a, #b03a2e); }
+@keyframes callAvaPulse {
+  0%, 100% { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(120, 220, 255, 0.5); }
+  50% { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), 0 0 0 12px rgba(120, 220, 255, 0); }
+}
+.call-who { font-size: 16px; font-weight: 900; letter-spacing: 0.04em; }
+.call-state { font-size: 11px; color: var(--txt-dim); letter-spacing: 0.1em; margin-top: -6px; }
+
+/* 对话气泡：一句一条。最后一条高亮（.now），让玩家知道"这句是新出的" */
+.call-lines { display: flex; flex-direction: column; gap: 7px; width: 100%; margin-top: 6px; }
+.call-line {
+  align-self: flex-start;
+  max-width: 92%;
+  padding: 9px 12px;
+  border-radius: 4px 14px 14px 14px;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--txt);
+  font-size: 12.5px;
+  line-height: 1.6;
+  animation: callLineIn 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.call-line.now { background: rgba(96, 228, 255, 0.16); box-shadow: inset 0 0 0 1px rgba(96, 228, 255, 0.3); }
+@keyframes callLineIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.call-act { display: flex; gap: 10px; width: 100%; margin-top: 12px; }
+.call-btn {
+  flex: 1;
+  padding: 13px 10px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.13);
+  color: var(--txt);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.call-btn:active { transform: translateY(2px); }
+.call-btn.gold { background: linear-gradient(180deg, #ffe17a, var(--gold) 45%, #e0a418); color: #3a2400; }
+.call-btn.ghost { flex: 0 0 34%; background: rgba(255, 255, 255, 0.07); color: var(--txt-dim); }
+.call-skip {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--txt-dim);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* 通话记录 */
+.call-log { display: flex; flex-direction: column; gap: 8px; }
+.call-log-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.cl-ico {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+.cl-ico svg { display: block; }
+/* 通话记录里的小头像按**来电人**上色，和来电界面的大头像保持一致
+   （同一个人在两处颜色不一样，玩家会以为记错了） */
+.cl-ico.shop { background: linear-gradient(158deg, #ffdd7a, #e08b12); }
+.cl-ico.gunshop { background: linear-gradient(158deg, #ffb37a, #b03a2e); }
+.cl-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cl-txt b { font-size: 12.5px; font-weight: 800; }
+.cl-txt i { font-size: 11px; font-style: normal; color: var(--txt-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 空状态 */
+.call-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--txt-dim);
+}
+.call-empty-ico { color: rgba(140, 210, 255, 0.4); }
+.call-empty b { font-size: 13px; color: var(--txt); }
+.call-empty span { font-size: 11.5px; line-height: 1.7; }
+
 /* ── 枪店 ──────────────────────────────────────────────
    和渔具店（一维的 11 行列表）不同，枪店每张卡要装下：名字 + 机制说明 +
    三个数值的「当前 → 下一级」+ 等级格 + 两个按钮。所以卡片比 .item 高得多，
@@ -906,6 +1229,13 @@ canvas#game {
   background: rgba(255, 90, 72, 0.14);
   border: 1px solid rgba(255, 90, 72, 0.3);
   color: #ffb0a4;
+}
+/* 超时收竿的提示（v0.6）：用**中性灰**而不是红色 ——
+   "鱼逃走了"是失误，而"时间到了"是规则，不该用同一种颜色去指责玩家。 */
+.escape-list.timedout span {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--txt-dim);
 }
 
 .card::-webkit-scrollbar { width: 5px; }
@@ -1284,6 +1614,7 @@ canvas#game {
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 .p-ico {
+  position: relative;      /* 未接来电的红点徽标要挂在这上面 */
   width: 56px;
   height: 56px;
   border-radius: 16px;
@@ -1302,6 +1633,24 @@ canvas#game {
 /* 枪店：暖红 —— 和已有的金/蓝/青/灰四色都拉开，一眼能找到 */
 .p-ico.gunshop { background: linear-gradient(158deg, #ffb37a, #b03a2e); }
 .p-ico.settings { background: linear-gradient(158deg, #c3d0dd, #56687a); }
+/* 电话：青绿 —— 和已有的金/蓝/青/红/灰都拉开；它排在第一位，要有"常用入口"的存在感 */
+.p-ico.call { background: linear-gradient(158deg, #9df5c8, #17a06a); }
+/* 未接来电的红点徽标（和真手机一样，挂在图标右上角） */
+.p-ico .p-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: #ff4a3d;
+  border: 2px solid #0d1622;
+  animation: badgePop 1.1s ease-in-out infinite;
+}
+@keyframes badgePop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.22); }
+}
 /* 未开放的地图（多地图结构预留）：App 变灰 */
 .p-app-item[disabled] { opacity: 0.42; cursor: default; }
 
@@ -1544,3 +1893,148 @@ canvas#game {
   .p-grid { gap: 12px 8px; padding: 14px 14px 6px; }
 }
 
+
+/* ── 船厂 App（v0.7）：三条船各一张卡，卡头像用船本身的配色（--hull / --trim 由 ui 注入）── */
+.p-ico.boat { background: linear-gradient(158deg, #ffd98a, #1f7fa8); }
+.bt-list { display: flex; flex-direction: column; gap: 10px; }
+.bt-item {
+  border: 1px solid rgba(150, 200, 230, 0.16);
+  border-radius: 14px;
+  background: rgba(9, 22, 36, 0.72);
+  padding: 11px 12px 12px;
+}
+.bt-item.cur { border-color: rgba(255, 204, 51, 0.5); background: rgba(255, 204, 51, 0.08); }
+.bt-item.owned { opacity: 0.94; }
+.bt-h { display: flex; align-items: center; gap: 9px; }
+.bt-ico {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  color: #fff;
+  background: linear-gradient(160deg, var(--hull, #2ea8d8), var(--trim, #1d5c86));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.bt-ico svg { display: block; }
+.bt-t { display: flex; flex-direction: column; line-height: 1.25; flex: 1 1 auto; min-width: 0; }
+.bt-t b { font-size: 14px; font-weight: 800; }
+.bt-t i { font-size: 10px; font-style: normal; color: var(--txt-dim); letter-spacing: 0.08em; }
+.bt-eff {
+  margin-top: 9px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--gold);
+}
+.bt-tip { margin-top: 3px; font-size: 11px; line-height: 1.5; color: var(--txt-dim); }
+.bt-foot { margin-top: 10px; display: flex; justify-content: flex-end; }
+
+/* ── 新货上架推送（v0.7 第三批）──────────────────────────────
+   与来电卡（.ios-call）同一套视觉语言：顶部滑入、圆角卡、左头像右时间。
+   差别：来电卡常驻等待选择，推送卡 4.2s 自动收起。 */
+.ios-news {
+  position: absolute;
+  left: 50%;
+  top: calc(10px + var(--safe-t));
+  transform: translate(-50%, -160%);
+  pointer-events: none;
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: min(320px, calc(100% - 28px));
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  background: rgba(24, 28, 36, 0.92);
+  color: var(--txt);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: transform 0.44s cubic-bezier(0.22, 1.2, 0.36, 1), opacity 0.3s ease;
+  cursor: pointer;
+  z-index: 7;
+  text-align: left;
+}
+.ios-news.on { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.ios-news .news-ava { background: linear-gradient(160deg, #2b6f8f, #123246); }
+.ios-news .ios-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ios-news .ios-txt b { font-size: 12.5px; font-weight: 800; letter-spacing: 0.02em; }
+.ios-news .ios-txt i { font-size: 11px; font-style: normal; color: var(--txt-dim); line-height: 1.4; }
+.ios-news .ios-now { flex: 0 0 auto; font-size: 10px; color: var(--txt-dim); }
+.ios-news:active { transform: translate(-50%, 2px) scale(0.99); }
+
+/* 手机红点：挂在 .phone-btn 右上角（按钮本体是一部小手机） */
+.phone-btn { position: absolute; }
+.ph-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: #ff3b30;
+  border: 2px solid rgba(4, 16, 28, 0.9);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.3, 1.6, 0.5, 1);
+  pointer-events: none;
+}
+.ph-dot.on { opacity: 1; transform: scale(1); }
+
+/* 枪店 App 图标上的红点（带数量）—— 复用来电红点的定位，加一个数字变体 */
+.p-badge.num { font-style: normal; }
+
+/* 枪店：还没上架的枪 = 一张黑卡（看得到名字，看不到任何数值） */
+.gs-item { position: relative; }
+.gs-item.unreleased {
+  border-style: dashed;
+  background: rgba(4, 10, 18, 0.66);
+  opacity: 0.82;
+}
+.gs-item.unreleased .gs-ico { filter: brightness(0.35) saturate(0.4); }
+.gs-item.unreleased .gs-t b { color: var(--txt-dim); }
+.gs-item.unreleased .gs-t i { color: rgba(160, 190, 215, 0.45); }
+.gs-lockrow {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: rgba(200, 220, 240, 0.62);
+}
+.gs-lockrow svg { flex: 0 0 auto; opacity: 0.75; }
+
+/* 新枪的「NEW」角标：挂在卡片右上角，买下之后自动消失（isNew 读的是 gunAnnounced） */
+.gs-new {
+  position: absolute;
+  top: -7px;
+  right: 10px;
+  padding: 2px 7px 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe17a, #e0a418);
+  color: #3a2400;
+  font-size: 9.5px;
+  font-weight: 900;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+/* 渔具店：还没上架的项 = 暗行 + 待解锁提示（保留 .buy.lock 的结构 —— 回归在守它） */
+.item.locked-row { opacity: 0.72; }
+.item.locked-row .icon { filter: brightness(0.45) saturate(0.4); }
+.item.locked-row .ds { color: var(--txt-dim); }
+.lock-hint {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: rgba(200, 220, 240, 0.6);
+}
+.lock-hint svg { flex: 0 0 auto; opacity: 0.7; }

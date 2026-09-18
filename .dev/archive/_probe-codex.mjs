@@ -63,8 +63,9 @@ try {
 
   console.log('--- fixture (同 verify5) ---');
   console.log(await ev(`(()=>{ const g=window.__game;
+    const LV = (o={}) => Object.fromEntries(Object.keys(g.save.levels).map(k=>[k, o[k]??0]));
     g.save = { coins: 900, bestDepth: 200, bestAlt: 0, casts: 5, totalEarned: 900,
-      levels:{line:2,hook:1,sinker:1,power:2,lamp:1,winch:1,creel:1,insurance:1,sonar:1,bait:1,rig:1},
+      levels: LV({line:2,hook:1,sinker:1,lamp:1}),
       licenses: [],
       codex: { sardine:{n:9,best:7}, clown:{n:4,best:12}, puffer:{n:2,best:9}, tuna:{n:1,best:44} } };
     g.applyUpgrades(); g.showIdle(); return 'ok'; })()`));

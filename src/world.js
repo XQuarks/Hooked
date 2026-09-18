@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import {
   WORLD, CAMERA, TUNING, WATER_STOPS, ALTITUDE_BANDS, DEEP, ICEBERG, mapMaxDepth, MODEL_SCALE,
-  MAX_LEVEL,
+  MAX_LEVEL, SEABED, CHEST, mapById,
 } from './config.js';
 
 // ─────────────────────────────────────────────────────────────
@@ -391,6 +391,7 @@ export class World {
     this._buildIcebergs();
     this._buildSurface();
     this._buildBoat();
+    this._buildSeabed();
     this._buildParticles();
     this._buildBlasts();
     this._buildVeil();
@@ -842,6 +843,9 @@ export class World {
 
     // ⑤ 浮冰：只有带 hook = 'iceberg' 的地图才有
     this.buildIcebergs(!!map && map.hook === 'iceberg');
+
+    // ⑥ 海床 + 宝箱（v0.7）：只有 `SEABED.map` 那张图有（首图）
+    if (this.seabedRoot) this.seabedRoot.visible = !!map && map.id === SEABED.map;
   }
 
   /** 浮冰的碰撞体（game.js 只读这个，不碰 mesh 细节） */
@@ -1390,11 +1394,143 @@ export class World {
     this.rodTip = new THREE.Vector3();
     this._rodTipLocal = new THREE.Vector3(0, ROD_LEN / 2, 0);
 
+    // ── 船只外观配件（v0.7）──────────────────────────────────
+    // 三条船共用**同一套船体几何**，只换颜色 + 三组可选配件：
+    //   黄金号 = 金帆 / 仓储号 = 货箱堆 / 装甲号 = 首装甲板。
+    // 这样"换船"看起来真的换了（一眼能认），而 `_buildBoat` 不必写三份拷贝。
+    const sailMat = toonMat({ color: 0xffe6a3, flatShading: true });
+    const plateMat = toonMat({ color: 0x9aa3af, flatShading: true });
+    const boxMat = toonMat({ color: 0x9c7346, flatShading: true });
+
+    const sail = new THREE.Mesh(new THREE.ConeGeometry(9, 26, 3), sailMat);
+    sail.rotation.set(0, Math.PI / 2, 0);
+    sail.position.set(0, 34, 0);
+    boat.add(sail);
+
+    const cargo = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(7, 6, 7), boxMat);
+      b.position.set(-6 + i * 6, 12.5, (i % 2 ? -1 : 1) * 3.4);
+      b.rotation.y = i * 0.4;
+      cargo.add(b);
+    }
+    boat.add(cargo);
+
+    const armor = new THREE.Group();
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(9, 12, 15), plateMat);
+    plate.position.set(0, 4, 7.6);
+    armor.add(plate);
+    for (let i = 0; i < 3; i++) {
+      const rivet = new THREE.Mesh(new THREE.SphereGeometry(1.1, 6, 5), plateMat);
+      rivet.position.set(0, -1 + i * 5, 15.3);
+      armor.add(rivet);
+    }
+    boat.add(armor);
+
+    this.boatSkin = {
+      hull: hullMat, trim: hullMat2,
+      parts: { golden: sail, cargo, armor },
+    };
+
     // 待机时的呼吸/摇晃基准
     this.boatBaseY = boat.position.y;
     this.rodBaseRot = ROD_ANG;
     this._syncRodTip();
+    this.setBoatSkin(null);     // 开局那条小舢板：原色 + 三组配件全收起
   }
+
+  /**
+   * 给船换一套外观（v0.7）。`def` 传 config 的 `BOATS` 条目，`null` = 开局那条小舢板。
+   *
+   * ⚠ 这里**只认 `hull` / `trim` / `id` 三个字段**，不 import config ——
+   *   世界层不该知道"船的名字和价钱"，那些属于数据层（game / ui）。
+   */
+  setBoatSkin(def) {
+    const sk = this.boatSkin;
+    if (!sk) return;
+    sk.hull.color.setHex((def && def.hull) || 0xe8533f);
+    sk.trim.color.setHex((def && def.trim) || 0x1d5c86);
+    const kind = def ? def.id : null;
+    for (const k of Object.keys(sk.parts)) sk.parts[k].visible = (k === kind);
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // 海床 + 宝箱（v0.7）：只在首图的最底部
+  //
+  // 为什么需要它：换图的内容门槛从"钓到 90% 的鱼种"改成了"潜到这张图的尽头拿海图"，
+  // 而"尽头"必须**看得见**才算一个目标 —— 一片虚空里放个宝箱，玩家不知道自己已经到了。
+  // 所以这里铺一层实体地面 + 石头 + 一只发光的箱子：潜到底那一刻有东西可看、可拿。
+  //
+  // ⚠ 海床只在 `SEABED.map` 那张图上显示（见 applyMap），冰封极地那边暂时没有。
+  // ─────────────────────────────────────────────────────────
+  _buildSeabed() {
+    const map = mapById(SEABED.map);
+    const depth = mapMaxDepth(map) + SEABED.margin;
+    const half = WORLD.playHalfWidth + 10;
+
+    this.seabedRoot = new THREE.Group();
+    this.seabedRoot.visible = false;      // 由 applyMap 按当前地图决定
+    this.scene.add(this.seabedRoot);
+
+    // 地面：一块厚板 —— 用 Box 而不是 Plane：正交视角下厚板才有"厚度感"，
+    // 而且它同时挡住了下面本该空无一物的地方。
+    const floor = new THREE.Mesh(
+      new THREE.BoxGeometry(half * 2, 12, 4),
+      toonMat({ color: 0x2b3841, flatShading: true }),
+    );
+    floor.position.set(0, -depth, 0);
+    this.seabedRoot.add(floor);
+
+    let seed = 20260917;
+    const rng = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+
+    // 石头：纯装饰，但"地面"上得有东西才像地面（不然就是一条灰板）
+    const rockMat = toonMat({ color: 0x39464f, flatShading: true });
+    for (let i = 0; i < SEABED.rocks; i++) {
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(3 + rng() * 6, 0), rockMat);
+      r.position.set((rng() - 0.5) * half * 1.9, -depth - 1.5 - rng() * 3.5, 0);
+      r.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+      this.seabedRoot.add(r);
+    }
+
+    // 宝箱：木箱 + 金盖 + 两道金箍 + 底下的光晕（深海很暗，不发光根本看不见）
+    const chest = new THREE.Group();
+    const woodMat = toonMat({ color: 0x7a5230, flatShading: true });
+    const goldMat = toonMat({ color: CHEST.glow, flatShading: true });
+    chest.add(new THREE.Mesh(new THREE.BoxGeometry(CHEST.w, CHEST.h, CHEST.d), woodMat));
+    const lid = new THREE.Mesh(
+      new THREE.BoxGeometry(CHEST.w * 1.06, CHEST.h * 0.42, CHEST.d * 1.06), goldMat,
+    );
+    lid.position.y = CHEST.h * 0.68;
+    chest.add(lid);
+    for (const sx of [-1, 1]) {
+      const band = new THREE.Mesh(
+        new THREE.BoxGeometry(1.6, CHEST.h * 1.12, CHEST.d * 1.04), goldMat,
+      );
+      band.position.x = sx * CHEST.w * 0.3;
+      chest.add(band);
+    }
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.glowTex, color: CHEST.glow, transparent: true, opacity: 0.55,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    glow.scale.set(40, 40, 1);
+    chest.add(glow);
+    chest.position.set(CHEST.x, -depth + CHEST.h * 0.7, 0);
+    this.seabedRoot.add(chest);
+
+    this.chest = chest;
+    // 碰撞体：给 game 用的纯数据（世界层不暴露 mesh 细节，和浮冰同一个约定）
+    this.chestAt = { x: chest.position.x, y: chest.position.y, r: CHEST.w * 0.5 };
+  }
+
+  /** 宝箱的显隐（捡到之后收起来，见 game 的 `_getChart`） */
+  showChest(v) { if (this.chest) this.chest.visible = !!v; }
+
+  hideChest() { this.showChest(false); }
 
   /** 把竿梢的世界坐标重算出来（船摇晃之后必须调） */
   _syncRodTip() {

@@ -64,15 +64,21 @@ await sleep(600);
 
 for (const lv of [0, 9, 19]) {
   const info = await ev(`(()=>{const g=window.__game; const cfg=window.__cfg;
-    for (const k of cfg.UPGRADE_ORDER) g.save.levels[k] = ${lv};
+    // ⚠ 一次性工具（绞盘）只到 Lv1：直接写 19 会让 upgradeCost 返回 Infinity，
+    //   fmtCost(Infinity) 把按钮写成 NaN，出图就废了。按各项自己的上限钳一次。
+    for (const k of cfg.UPGRADE_ORDER) g.save.levels[k] = Math.min(${lv}, cfg.maxLvOf(k));
     g.applyUpgrades(); g.ui.refreshApp();
-    const hs = [...new Set([...document.querySelectorAll('#pApp .item')]
-      .map(r => Math.round(r.getBoundingClientRect().height)))];
-    const texts = [...document.querySelectorAll('#pApp .item .ds')].map(e => e.textContent.trim());
-    return JSON.stringify({ heights: hs, texts: texts });})()`);
+    const items = [...document.querySelectorAll('#pApp .item')];
+    const curve = items.filter(r => !r.querySelector('.lv').textContent.includes('拥有'));
+    const hs = [...new Set(curve.map(r => Math.round(r.getBoundingClientRect().height)))];
+    const texts = items.map(e => e.querySelector('.ds').textContent.trim());
+    return JSON.stringify({ heights: hs, texts: texts,
+      oneshot: items.filter(r => r.querySelector('.lv').textContent.includes('拥有'))
+        .map(r => r.querySelector('.ds').textContent.trim()) });})()`);
   const d = JSON.parse(info);
-  console.log(`Lv${lv}: 行高集合 ${JSON.stringify(d.heights)}`);
-  console.log(`      例：${d.texts[0]} / ${d.texts[3]} / ${d.texts[8]}`);
+  console.log(`Lv${lv}: 曲线行行高 ${JSON.stringify(d.heights)}（一次性工具行不参与，它没有进度条）`);
+  console.log(`      例：${d.texts[0]} / ${d.texts[3]} / ${d.texts[4]}`);
+  console.log(`      一次性工具：${d.oneshot.join(' | ') || '（未拥有）'}`);
   // 截商店那一屏（滚到列表顶部）
   await ev(`(()=>{const b=document.querySelector('#pApp .p-app-body'); if(b) b.scrollTop=0; return 'ok';})()`);
   await sleep(180);

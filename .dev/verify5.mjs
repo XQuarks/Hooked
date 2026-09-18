@@ -157,17 +157,26 @@ try {
   // ═══════════════════════════════════════════════════════
   // C 组 — 图鉴（需求⑤）
   // ═══════════════════════════════════════════════════════
-  await ev(`(()=>{ const g=window.__game;
-    // ⚠ levels 必须把 UPGRADE_ORDER 的 11 项**全部**写出来。
+  await ev(`(()=>{ const g=window.__game; const cfg=window.__cfg;
+    // ⚠ levels 必须把 UPGRADE_ORDER 的**每一项**都写出来。
     // 少写一项的话那一项就是 undefined，applyUpgrades 里会算出 NaN 并污染物理，
     // 而且不报错 —— 症状只是"鱼突然钓不上来了"（已经踩过一次：漏了 winch → 上拉速度 NaN）。
+    //
+    // ⚠⚠ 2026-09 修（B6）：这里原来是**手写的 11 项列表**，从 v0.5 删掉 4 项起就过期了
+    //   （power / insurance / sonar / rig 已经不存在，靠"多出来的键被忽略"蒙混过关）。
+    //   现在一律**从 config 现铺**（.dev/fixtures.mjs 的 levelsOf() 就是这个口径，
+    //   只是测试跑在页面里，所以照它的写法现取一次），verify7 的 A9 会扫这类手写字面量。
+    const lv = Object.fromEntries(cfg.UPGRADE_ORDER.map(k=>[k,0]));
+    Object.assign(lv, { line:2, hook:1, sinker:1, lamp:1, winch:1, creel:1, bait:1 });
+    const glv = Object.fromEntries(cfg.GUN_ORDER.map(id=>[id,0]));
+    Object.assign(glv, { pistol: 1 });
     g.save = { coins: 900, bestDepth: 200, bestAlt: 0, casts: 5, totalEarned: 900,
-      levels:{line:2,hook:1,sinker:1,power:2,lamp:1,winch:1,creel:1,insurance:1,sonar:1,bait:1,rig:1},
+      levels: lv,
       // ⚠ v0.4：guns 是**必填**的第二个表。少了它，save.guns.current
       //   会在 _tapFire / _syncGunHud 里抛异常 —— 而且症状离病因很远
       //   （"空中阶段一开火就整个卡住、不结算"）。同一个坑在 levels 上踩过一次。
-      guns: { owned: [], current: 'pistol', levels: { pistol: 1 } },
-      licenses: [],
+      guns: { owned: [], current: 'pistol', levels: glv },
+      licenses: [], mapBest: {}, calls: [], lastCallCast: -999,
       codex: { sardine:{n:9,best:7}, clown:{n:4,best:12}, puffer:{n:2,best:9}, tuna:{n:1,best:44} } };
     g.applyUpgrades(); g.showIdle(); return 'ok'; })()`);
   await ev('window.step(20)');
@@ -328,11 +337,10 @@ try {
     const def = window.__cfg.SPECIES.find(s=>s.id==='tuna');   // hp 9
     const f = g.fish.acquire(def); f.reset(0, 100);
     g.state = 'air'; g.airFish = [f]; g.caught = []; g.birds = []; g.airT = 0;
-    g.save.levels.power = 0; g.applyUpgrades();
     // v0.4：开火走枪械管线（_tapFire），冷却字段也从 fireCd 改成 gunCd。
-    // 伤害不再是固定的 1 —— 它是"当前枪械档位伤害 × 攻击力倍率"，所以断言要现算。
+    // v0.5：伤害**只**来自枪械档位（全局「攻击力」倍率已并入 GUNS[].dmg），所以断言直接读它。
     g.gunCd = 0;
-    const dmg = g.gunStat.damage * g.gunMul;
+    const dmg = g.gunStat.damage;
     const w = g.world.screenToWorld(0.5, 0.5);
     f.launch(0, 120, w.x, w.y);
     f.vx = 0; f.vy = 120;
