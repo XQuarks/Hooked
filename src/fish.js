@@ -6,8 +6,8 @@
  * 单条鱼最终只有 5~8 个 draw call，而不是 15~25 个。
  */
 import * as THREE from 'three';
-import { WORLD, TUNING, RARITY, rollRarity, MODEL_SCALE } from './config.js';
-import { makeGlowTexture, toonMat } from './world.js';
+import { WORLD, TUNING, RARITY, rollRarity, MODEL_SCALE, BEHAVIOR, TRAIT, SIREN } from './config.js';
+import { makeGlowTexture, toonMat, mergeGeos } from './world.js';
 
 // ── 缓存 ────────────────────────────────────────────────────
 const geoCache = new Map();
@@ -47,26 +47,6 @@ function place(geo, pos, rot, scale) {
   return geo.clone().applyMatrix4(m);
 }
 
-/** 合并多份几何体为一份（只保留 position / normal，够用且省内存） */
-function mergeGeos(list) {
-  const parts = list.map((g) => (g.index ? g.toNonIndexed() : g));
-  let total = 0;
-  for (const g of parts) total += g.attributes.position.count;
-  const pos = new Float32Array(total * 3);
-  const nor = new Float32Array(total * 3);
-  let off = 0;
-  for (const g of parts) {
-    pos.set(g.attributes.position.array, off * 3);
-    if (g.attributes.normal) nor.set(g.attributes.normal.array, off * 3);
-    off += g.attributes.position.count;
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-  out.computeBoundingSphere();
-  return out;
-}
-
 /** 鱼鳍：XY 平面内的多边形（正对相机） */
 function finGeo(key, pts) {
   return sh('fin:' + key, () => {
@@ -75,6 +55,26 @@ function finGeo(key, pts) {
     for (let i = 1; i < pts.length; i++) s.lineTo(pts[i][0], pts[i][1]);
     s.closePath();
     return new THREE.ShapeGeometry(s);
+  });
+}
+
+/**
+ * **有厚度**的翼面（天空目标专用）。
+ *
+ * ⚠ 为什么不能直接用 `finGeo`：它是单面多边形（纸片）。鱼鳍只有几像素大，纸片看不出来；
+ *   但鸟翼 / 机翼在屏幕上有一二十像素，纸片会被读成"贴纸"——
+ *   实测第一版就是这样，整只鸟像挂着一条纸带。挤出一点厚度立刻就实了，
+ *   而且侧视相机会把厚度渲染成一条暗边，正好当轮廓线用（这个美术风格要的就是这个）。
+ */
+function solidFin(key, pts, depth = 0.16) {
+  return sh('solid:' + key, () => {
+    const s = new THREE.Shape();
+    s.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) s.lineTo(pts[i][0], pts[i][1]);
+    s.closePath();
+    const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false });
+    g.translate(0, 0, -depth / 2);     // 厚度居中，z 对称
+    return g;
   });
 }
 
@@ -502,6 +502,229 @@ export function buildFishModel(def) {
 // ─────────────────────────────────────────────────────────────
 export const FISH_STATE = { SWIM: 'swim', CAUGHT: 'caught', AIR: 'air', DEAD: 'dead' };
 
+// ─────────────────────────────────────────────────────────────
+// 天空目标造型（v0.8）：海鸟 / 飞机 / UFO
+// ─────────────────────────────────────────────────────────────
+/**
+ * 侧视正交相机下的可读性约定（和枪械图标同一个思路）：
+ *   · 每个造型要有**一个夸张的整体剪影**（鸟 = 后掠的翅 + 尖喙、飞机 = 后掠翼、UFO = 扁盘 + 光柱）。
+ *     玩家在 20px 大小、还在飞的瞬间要认出"这是个能打的东西"。
+ *   · 一律 `toonMat`（卡通阶梯着色），整场光照语言要一致。
+ *   · 会动的部件挂 `userData`，由 `game.js::_updateSky` 驱动：
+ *     `wingL` / `wingR`（扑翼）、`glow`（引擎光）、`dome` / `beam`（UFO 脉动）。
+ *
+ * ⚠ 几何体走 `sh()` / `finGeo()` 缓存（同一个造型反复刷新不重复建几何体）；
+ *   **会脉动的材质逐条新建** —— 进 `matCache` 的话两个 UFO 会同步闪。
+ * ⚠ 朝向靠 `mesh.scale.x` 取负来镜像（不是 `rotation.y`）：
+ *   镜像整个局部坐标系，扑翼动画会跟着一起镜像，不会出现"倒着飞还正着扇翅膀"。
+ */
+export function buildSkyModel(kind) {
+  if (kind === 'plane') return buildPlane();
+  if (kind === 'ufo') return buildUfo();
+  return buildBird();
+}
+
+/**
+ * 海鸟 —— v0.8 重做。
+ *
+ * ⚠⚠ **侧视正交相机下的造型铁律**：部件只能朝 **−X（向后）** 和 **±Y（上下，屏幕内）** 展开，
+ *   **不能朝 ±Y 当"展开方向"**。踩过的坑：第一版把翅膀做成俯视剪影（向 ±Y 展开），
+ *   结果在屏幕上是"竖着的一片板"，整只鸟读起来像一张船帆。
+ *   这条和"侧视游戏里的飞机只能画侧面"是同一件事。
+ *
+ * 所以正确的鸟 = **侧面剪影**：流线身体 + 一片向后后掠并略微上扬的翅膀 + 扇尾 + 尖喙。
+ * 两片翅膀都躺在 XY 平面里（远的被近的挡住）—— 这正是手绘侧视鸟的做法。
+ * 扇动 = 两片一起绕 Z 转（翼尖在屏幕内上下摆，最醒目）。
+ */
+function buildBird() {
+  const g = new THREE.Group();
+  const feather = () => toonMat({ color: 0xf7fbff });
+  const dark = new THREE.MeshBasicMaterial({ color: 0x1a1f26 });
+
+  // ① 身体：旋转体剖面（和鱼同一个思路），头朝 +X
+  const body = new THREE.Mesh(sh('bird:body', () => {
+    const pts = [
+      [0.05, -1.0], [0.40, -0.80], [0.74, -0.42], [0.90, 0.02],
+      [0.82, 0.46], [0.56, 0.80], [0.25, 0.97], [0.04, 1.0],
+    ].map(([r, h]) => new THREE.Vector2(r, h));
+    const geo = new THREE.LatheGeometry(pts, 10);
+    geo.rotateZ(-Math.PI / 2);
+    return geo;
+  }), feather());
+  body.scale.set(3.0, 1.05, 1.05);
+  g.add(body);
+
+  // ② 头 + 喙 + 眼
+  const head = new THREE.Mesh(SPHERE(), feather());
+  head.scale.setScalar(0.72);
+  head.position.set(2.60, 0.30, 0);
+  g.add(head);
+
+  const beak = new THREE.Mesh(CONE(), toonMat({ color: 0xffa726 }));
+  beak.scale.set(0.28, 1.25, 0.28);
+  beak.rotation.z = -Math.PI / 2;
+  beak.position.set(3.60, 0.24, 0);
+  g.add(beak);
+
+  for (const zs of [1, -1]) {
+    const eye = new THREE.Mesh(SPHERE(), dark);
+    eye.scale.setScalar(0.16);
+    eye.position.set(2.98, 0.50, zs * 0.28);
+    g.add(eye);
+  }
+
+  // ③ 翅膀：向后后掠 + 略微上扬（**侧面剪影**），两片 z=±0.42
+  //    ⚠ 用 `solidFin`（有厚度），不用 `finGeo` —— 理由见 solidFin 上面那段注释
+  const wingGeo = solidFin('bird:wing', [
+    [0.90, 0.90], [-1.10, 1.75], [-3.70, 2.10], [-5.40, 1.45],
+    [-4.20, 0.70], [-1.60, 0.10], [-0.35, -0.55],
+  ]);
+  const wings = [];
+  for (const zs of [1, -1]) {
+    const pivot = new THREE.Group();              // 绕肩部扇动 → 必须包一层
+    const w = new THREE.Mesh(wingGeo, feather());
+    pivot.add(w);
+    pivot.position.set(0.60, 0.30, zs * 0.42);
+    g.add(pivot);
+    wings.push(pivot);
+  }
+  g.userData.wingL = wings[0];
+  g.userData.wingR = wings[1];
+
+  // ④ 扇尾：给剪影收个尾
+  const tail = new THREE.Mesh(solidFin('bird:tail', [
+    [0.50, 0.72], [0.50, -0.72], [-2.00, -1.20], [-2.00, 1.20],
+  ]), feather());
+  tail.position.set(-2.60, 0.05, 0);
+  g.add(tail);
+
+  return g;
+}
+
+/**
+ * 飞机（v0.8 新增）。
+ *
+ * 同样守住**侧面剪影**那条铁律（见上面海鸟那段）：机身水平、**一片后掠主翼向后下方展开**、
+ * **垂直尾翼向上**（尾翼是"这是飞机"的第一眼线索）、机背一个小座舱罩、尾部引擎光。
+ * 两片主翼都躺在 XY 平面里，远的自然被近的挡住 —— 和手绘侧视飞机一模一样。
+ */
+function buildPlane() {
+  const g = new THREE.Group();
+  const skin = () => toonMat({ color: 0xeef3fa });
+  const wingMat = () => toonMat({ color: 0xdde6f0 });
+  const metal = () => toonMat({ color: 0x9fb2c6 });
+
+  // 机身：旋转体，机头更尖
+  const body = new THREE.Mesh(sh('plane:body', () => {
+    const pts = [
+      [0.04, -1.0], [0.26, -0.78], [0.58, -0.36], [0.84, 0.04],
+      [0.90, 0.44], [0.62, 0.78], [0.28, 0.96], [0.03, 1.0],
+    ].map(([r, h]) => new THREE.Vector2(r, h));
+    const geo = new THREE.LatheGeometry(pts, 10);
+    geo.rotateZ(-Math.PI / 2);
+    return geo;
+  }), skin());
+  body.scale.set(4.6, 0.95, 0.95);
+  g.add(body);
+
+  // 座舱罩：机背上一块略深的窄鼓包
+  const canopy = new THREE.Mesh(SPHERE(), toonMat({ color: 0x3d6f9e }));
+  canopy.scale.set(1.15, 0.50, 0.58);
+  canopy.position.set(1.15, 0.82, 0);
+  g.add(canopy);
+
+  // 主翼：向后下方后掠（侧面剪影），两片 z=±0.45
+  const wingGeo = solidFin('plane:wing', [
+    [0.95, 0.40], [-0.30, 0.80], [-3.10, 0.30], [-5.10, -0.55],
+    [-4.45, -1.25], [-1.70, -0.62], [-0.45, -0.50],
+  ]);
+  for (const zs of [1, -1]) {
+    const w = new THREE.Mesh(wingGeo, wingMat());
+    w.position.z = zs * 0.45;
+    g.add(w);
+  }
+
+  // 水平尾翼（小）+ 垂直尾翼（大，向上 —— 认飞机的关键）
+  const tailWing = solidFin('plane:tail', [
+    [0.75, 0.15], [-0.20, 0.45], [-1.85, 0.10], [-1.65, -0.35], [-0.20, -0.25],
+  ]);
+  for (const zs of [1, -1]) {
+    const w = new THREE.Mesh(tailWing, metal());
+    w.position.set(-3.30, 0.15, zs * 0.30);
+    g.add(w);
+  }
+  const fin = new THREE.Mesh(solidFin('plane:fin', [
+    [0.75, 0], [0.30, 1.60], [-0.75, 1.70], [-1.00, 0],
+  ]), metal());
+  fin.position.set(-3.35, 0.55, 0);
+  g.add(fin);
+
+  // 引擎光（尾部）—— 逐条新建材质，脉动时互不影响
+  const glow = new THREE.Mesh(PLANE(), new THREE.MeshBasicMaterial({
+    map: makeGlowTexture('rgba(255,196,120,1)'), color: 0xffc478,
+    transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  glow.scale.set(1.9, 0.85, 1);
+  glow.position.set(-4.7, -0.15, -0.35);
+  g.add(glow);
+  g.userData.glow = glow;
+
+  return g;
+}
+
+/**
+ * UFO（v0.8 新增）：经典飞碟 —— 扁盘 + 舱罩 + 一圈舷灯 + 一道淡淡的向下光柱。
+ * 光柱是"一眼认出是 UFO"的关键。⚠ 它必须**很淡**：加色混合下稍微调大一点就会把整片天空糊白。
+ */
+function buildUfo() {
+  const g = new THREE.Group();
+  const hull = () => toonMat({ color: 0xb9c6d6 });
+  const trim = () => toonMat({ color: 0x6f8199 });
+
+  // 盘体：压扁的球 → 经典飞碟剪影
+  const disc = new THREE.Mesh(SPHERE(), hull());
+  disc.scale.set(4.4, 1.30, 4.4);
+  g.add(disc);
+
+  // 边缘一道深色环带（用扁球，不做 Torus）
+  const rim = new THREE.Mesh(SPHERE(), trim());
+  rim.scale.set(4.62, 0.42, 4.62);
+  rim.position.y = -0.18;
+  g.add(rim);
+
+  // 舱罩：半透明青，`_updateSky` 让它呼吸
+  const dome = new THREE.Mesh(SPHERE(), new THREE.MeshBasicMaterial({
+    color: 0x7fe6ff, transparent: true, opacity: 0.72,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  dome.scale.set(1.95, 1.35, 1.95);
+  dome.position.y = 1.02;
+  g.add(dome);
+  g.userData.dome = dome;
+
+  // 一圈舷灯
+  const bulb = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const l = new THREE.Mesh(SPHERE(), bulb);
+    l.scale.setScalar(0.30);
+    l.position.set(Math.cos(a) * 3.55, -0.22, Math.sin(a) * 3.55);
+    g.add(l);
+  }
+
+  // 向下的光柱（加色，**必须很淡**）—— 稍微调大一点就会把整片天空糊白，逐条新建材质
+  const beam = new THREE.Mesh(CONE(), new THREE.MeshBasicMaterial({
+    color: 0x9ff0ff, transparent: true, opacity: 0.09,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  beam.scale.set(1.60, 3.40, 1.60);
+  beam.position.set(0, -2.55, 0);
+  g.add(beam);
+  g.userData.beam = beam;
+
+  return g;
+}
+
 /**
  * 血量由体型推算：小鱼一炮就碎，大鱼要补一炮。
  * ⚠ 除数跟着 MODEL_SCALE 走：radius 在 v0.2 里已经 ×2 了，除数不跟着涨的话
@@ -582,6 +805,15 @@ export class Fish {
     this.hitFlash = 0;
     this.immuneT = 0;
     this.knockT = 0;
+    // ── 行为模式 / 特殊状态（批 7）──
+    // ⚠ 缺省就是 `cruise` —— **新鱼种不写 `behavior` 就是匀速直游**，向后兼容。
+    this.behavior = d.behavior || 'cruise';
+    this.trait = d.trait || null;
+    this.behaviorT = 0;
+    this.dashing = true;              // dash 模式从"冲"开始
+    // 占几个鱼护位（带电鱼占 2 个）。默认 1，`_catch` 按它算鱼护用量。
+    this.slots = (this.trait && TRAIT[this.trait] && TRAIT[this.trait].slots) || 1;
+    this._syncDecoys();
     // 血量取自鱼种定义（图鉴要如实显示），没有定义才退回体型推算
     this.hp = Number.isFinite(d.hp) ? d.hp : calcHp(this.radius);
     this.maxHp = this.hp;
@@ -681,6 +913,122 @@ export class Fish {
 
   kill() { this.state = FISH_STATE.DEAD; this.mesh.visible = false; }
 
+  // ── 行为模式（批 7）────────────────────────────────────────
+  /**
+   * 决定这条鱼**这一帧往哪游、游多快**，返回带方向的水平速度（世界单位/秒）。
+   *
+   * 为什么把"往哪游"收进一个函数：六种模式只差"目标速度和方向怎么算"，
+   * 而**推进位置、边界回绕、摆尾动画**是三套共用的。分散写会让
+   * "边界回绕"漏掉某一种模式（症状是那条鱼游出画面再也不回来）。
+   *
+   * ⚠ `ctx` 是**鱼钩的当前位置**（`{x, y}`）。追猎 / 逃逸 / 伏击三种模式都要读它，
+   *   所以 `game.js` 每帧把钩子坐标传进来 —— 鱼不自己去找钩子（那样鱼就得认识 game）。
+   */
+  _steer(dt, ctx) {
+    const hookX = ctx ? ctx.x : 0;
+    const hookY = ctx ? ctx.y : 0;
+    // 海妖之歌（批 8b）：歌声期间**所有鱼都朝鱼钩游过来**，不管它本来是什么模式。
+    // ⚠ 放在最前面、直接 return —— 歌声是"覆盖"而不是"叠加"，
+    //   叠加的话逃逸鱼会一边逃一边被拉，看起来像在抽搐。
+    if (ctx && ctx.siren) {
+      this.dir = hookX - this.x < 0 ? -1 : 1;
+      return this.dir * this.speed * SIREN.speedMul;
+    }
+    const dx = hookX - this.x;
+    const dy = hookY - this.y;
+    const d2 = dx * dx + dy * dy;
+
+    switch (this.behavior) {
+      // 追猎：够近才启动，太远照常巡游（否则它会横穿整张图来找你，看着很怪）
+      case 'hunt': {
+        if (d2 < BEHAVIOR.hunt.radius * BEHAVIOR.hunt.radius) this.dir = dx < 0 ? -1 : 1;
+        return this.dir * this.speed * BEHAVIOR.hunt.speedMul;
+      }
+      // 逃逸：进半径就**掉头加速跑**。注意 dir 是"离开钩子"而不是"掉头"——
+      //   写反的话它会一头撞上来，那是 hunt 不是 flee。
+      case 'flee': {
+        if (d2 < BEHAVIOR.flee.radius * BEHAVIOR.flee.radius) {
+          this.dir = dx < 0 ? 1 : -1;
+          return this.dir * this.speed * BEHAVIOR.flee.speedMul;
+        }
+        return this.dir * this.speed;
+      }
+      // 伏击：不动；玩家进半径才突然冲刺
+      case 'ambush': {
+        if (d2 < BEHAVIOR.ambush.radius * BEHAVIOR.ambush.radius) {
+          this.dir = dx < 0 ? -1 : 1;
+          return this.dir * this.speed * BEHAVIOR.ambush.speedMul;
+        }
+        return 0;
+      }
+      // 冲刺：冲 run 秒 → 停 rest 秒 → 再冲（"节奏感，不是一直好抓"）
+      case 'dash': {
+        this.behaviorT -= dt;
+        if (this.behaviorT <= 0) {
+          this.dashing = !this.dashing;
+          this.behaviorT = this.dashing ? BEHAVIOR.dash.run : BEHAVIOR.dash.rest;
+        }
+        return this.dashing ? this.dir * this.speed * BEHAVIOR.dash.speedMul : 0;
+      }
+      // cruise（含所有没写 behavior 的鱼）：匀速直游
+      default:
+        return this.dir * this.speed;
+    }
+  }
+
+  /**
+   * 幻影残影（批 7）：`trait === 'phantom'` 的鱼身上挂 2 个**半透明的自己**。
+   * 判定用的始终是 `this.x / this.y`（真身），残影纯粹是干扰。
+   *
+   * ⚠ 残影的材质**必须逐条克隆**，不能直接用 `buildFishModel` 的缓存材质：
+   *   那个缓存按 `def.id` 共享，改透明度会把**整种鱼**都变半透明。
+   *   （和稀有度光晕是同一条坑，见构造函数的注释。）
+   * ⚠ 残影挂在 `this.mesh` 下（局部坐标）而不是场景里：这样它自动跟着鱼的
+   *   位置 / 缩放 / 朝向走，不用在别处再同步一次。`position` 用局部坐标即可。
+   */
+  _ensureDecoys() {
+    if (this.decoys) return;
+    this.decoys = [];
+    for (let i = 0; i < TRAIT.phantom.decoys; i++) {
+      const g = buildFishModel(this.def);
+      g.traverse((o) => {
+        if (!o.material) return;
+        const one = (m) => {
+          const c = m.clone();
+          c.transparent = true;
+          c.opacity = 0.38;
+          c.depthWrite = false;
+          return c;
+        };
+        o.material = Array.isArray(o.material) ? o.material.map(one) : one(o.material);
+      });
+      g.visible = false;
+      this.mesh.add(g);
+      this.decoys.push(g);
+    }
+  }
+
+  /** 只有幻影鱼才有残影；对象池复用成别的鱼种时要把旧的收起来 */
+  _syncDecoys() {
+    if (this.trait === 'phantom') this._ensureDecoys();
+    else if (this.decoys) for (const g of this.decoys) g.visible = false;
+  }
+
+  /** 残影的跟随（每帧在 SWIM 分支里调；非 SWIM 状态一律收起） */
+  _moveDecoys(t) {
+    if (!this.decoys || !this.decoys.length) return;
+    const on = this.trait === 'phantom' && this.state === FISH_STATE.SWIM;
+    for (let i = 0; i < this.decoys.length; i++) {
+      const g = this.decoys[i];
+      g.visible = on;
+      if (!on) continue;
+      // 横向错开 + 各自的上下相位差：不是"复制三个叠在一起"，
+      // 所以"哪条是真的"要靠看**转向**，而不是靠位置 —— 这才是设计意图。
+      const k = i + 1;
+      g.position.set(-this.dir * k * 15 * MODEL_SCALE, Math.sin(t * 2.1 + k * 2.2) * 4 * MODEL_SCALE, -k * 0.6);
+    }
+  }
+
   /** 挂在鱼线上的展示位 */
   placeOnLine(x, y) {
     this.mesh.position.set(x, y, 0.6);
@@ -693,21 +1041,27 @@ export class Fish {
     this.mesh.rotation.set(0, Math.PI + fl, 0.35 + sp);
   }
 
-  update(dt, t, viewRange) {
+  update(dt, t, viewRange, ctx) {
     if (this.state === FISH_STATE.DEAD) return;
 
     if (this.state === FISH_STATE.CAUGHT) {
       const b = this.mesh.position;
       this.mesh.rotation.z = 0.35 + Math.sin(t * 3 + b.y * 0.2) * 0.18;
       this.mesh.visible = !this.capped && b.y < viewRange.top + 25 * MODEL_SCALE && b.y > viewRange.bottom - 25 * MODEL_SCALE;
+      this._moveDecoys(t);          // 串上之后残影要收起来（真身已经暴露了）
       return;
     }
 
     if (this.state === FISH_STATE.SWIM) {
-      this.x += this.dir * this.speed * dt;
+      // 行为模式（批 7）：速度由 `_steer` 算；**位置推进 / 边界回绕 / 摆尾三套共用**，
+      // 不分散到六种模式里 —— 否则"回绕"漏掉一种，那条鱼就会游出画面再也不回来。
+      const vx = this._steer(dt, ctx);
+      this.x += vx * dt;
       const hw = WORLD.fishHalfWidth + this.radius;
       if (this.x > hw) { this.x = -hw; }
       else if (this.x < -hw) { this.x = hw; }
+      // 摆尾频率跟**实际**速度走 —— 静止的鱼（伏击 / 冲刺的停顿段）不该还在摆尾
+      const spd = Math.abs(vx);
 
       const yy = this.y + Math.sin(t * this.bobFreq + this.phase) * this.bobAmp;
       this.mesh.position.set(this.x, yy, Math.sin(t * 0.6 + this.phase) * 3.0 * MODEL_SCALE);
@@ -718,15 +1072,16 @@ export class Fish {
       // ⚠ 0.11 / 0.28 是「速度 → 摆尾频率」的换算系数，v0.2 里要**除以 MODEL_SCALE**：
       //   鱼速已经在 SPECIES 里 ×2 了，不折半的话摆尾会快一倍（鱼看起来像在发抖）。
       //   物理直觉：体型和速度同时 ×2 → "每秒游过几个身位"不变 → 摆尾频率也不该变。
-      this.mesh.rotation.y = base + sgn * Math.sin(t * this.speed * 0.11 / MODEL_SCALE + this.phase) * 0.52;
+      this.mesh.rotation.y = base + sgn * Math.sin(t * spd * 0.11 / MODEL_SCALE + this.phase) * 0.52;
       this.mesh.rotation.z = Math.sin(t * this.bobFreq * 1.25 + this.phase) * 0.12;
 
       const tp = this.mesh.userData.tailPivot;
-      if (tp) tp.rotation.y = Math.sin(t * (4 + this.speed * 0.28 / MODEL_SCALE) + this.phase) * 0.5;
+      if (tp) tp.rotation.y = Math.sin(t * (4 + spd * 0.28 / MODEL_SCALE) + this.phase) * 0.5;
 
       this.mesh.scale.setScalar(this.scale * (this.hitFlash > 0 ? 1 + this.hitFlash * 0.9 : 1));
       if (this.hitFlash > 0) this.hitFlash -= dt;
       this._syncExtras(t);
+      this._moveDecoys(t);
 
     } else if (this.state === FISH_STATE.AIR) {
       this.vy += TUNING.airGravity * dt;

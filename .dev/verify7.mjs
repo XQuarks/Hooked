@@ -40,9 +40,17 @@ console.log('\n── A 数值表 ──');
 
 const { LEVELS, MAX_LEVEL, UPGRADES, UPGRADE_ORDER, GROWTH, upgradeCost, lvAt, maxLvOf, MAP_LEVEL_CAP } = C;
 const ROWS = Object.keys(LEVELS);
+// ⚠ 不写死"7 条"：批 4 加了第 8 项「耐压舱」。
+//   ⚠ 也不能断言"曲线数 === 有等级的升级项数" —— **灯具一项占两条曲线**
+//   （照亮半径 + 照度），所以曲线数比项数多 1。项 ↔ 曲线的映射表在
+//   `.dev/gen-docs.mjs` 的 `curveKeysOf()`，跨模块引它会把两个脚本绑死。
+//   这里退一步断言**下界**（曲线数 ≥ 有等级的项数）+ 每条都是 21 级；
+//   "加了升级项忘了加曲线"那类错误由 `lvAt()` 在运行时直接抛错兜住。
+const CURVE_WANTED = UPGRADE_ORDER.filter((k) => !UPGRADES[k].oneShot);
 
-check('A1 曲线条数 = 7，每条都是 21 级（0~20）无缺口',
-  ROWS.length === 7 && ROWS.every((k) => LEVELS[k].length === MAX_LEVEL + 1),
+check('A1 LEVELS 每条曲线都是 21 级（0~20）无缺口，且条数不少于"有等级的升级项"',
+  ROWS.length >= CURVE_WANTED.length
+  && ROWS.every((k) => LEVELS[k].length === MAX_LEVEL + 1),
   `${ROWS.length} 条 · ${ROWS.join('/')}`);
 
 check('A2 每条曲线的值都是有限数（没有 NaN / undefined 洞）',
@@ -362,14 +370,14 @@ try {
     g.save.coins = 99999999; g.save.levels.winch = 0;
     // v0.7 第二批：解锁判定改成"到没到过那张图"（许可证退役）——
     // 所以这里用"没有海图 / 没有船"来模拟"还没去过极地"。
-    g.save.chart = false; g.save.boats = { owned: [], current: null };
+    g.save.charts = {}; g.save.boats = { owned: [], current: null };
     g.save.licenses = []; g.ui.refreshApp();
     const locked = read();
     // 老存档的兜底：**已经买过绞盘**、但还没拿到极地许可证
     g.save.levels.winch = 1; g.ui.refreshApp();
     const owned = read();
     g.save.levels.winch = 0;
-    g.save.chart = true; g.save.boats = { owned: ['golden'], current: 'golden' };
+    g.save.charts = { polar: true }; g.save.boats = { owned: ['golden'], current: 'golden' };
     g.ui.refreshApp();
     const open = read();
     const u = cfg.UPGRADES.winch;
@@ -390,7 +398,7 @@ try {
   // 这条守的是"分段解锁的名单本身"：以后谁把某一项的 unlockMap 去掉/改了，这里会挂。
   const shelf = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
     g.save.licenses = []; g.save.coins = 9999999; g.save.levels.winch = 0;
-    g.save.chart = false; g.save.boats = { owned: [], current: null };
+    g.save.charts = {}; g.save.boats = { owned: [], current: null };
     g.ui.refreshApp();
     const locked = [...document.querySelectorAll('#pApp .buy.lock')].map(b=>b.dataset.k).sort();
     const want = cfg.UPGRADE_ORDER.filter(k => cfg.UPGRADES[k].unlockMap).sort();
@@ -400,8 +408,8 @@ try {
       lvText: document.querySelector('#pApp .item .lv').textContent.trim(),
       note: document.querySelector('#pApp .p-note').textContent.replace(/\\s+/g,' ').trim() };
   })())`));
-  check('B12 首图（新手图）只上架 4 项基础：带 unlockMap 的 3 项全部锁着、进度条只画本图段',
-    shelf.locked.join(',') === shelf.want.join(',') && shelf.locked.length === 3
+  check('B12 首图（新手图）只上架 4 项基础：带 unlockMap 的项全部锁着、进度条只画本图段',
+    shelf.locked.join(',') === shelf.want.join(',') && shelf.locked.length === shelf.want.length
     && shelf.open.length === 4 && shelf.segPips === 5 && /^Lv\.0 \/ 5$/.test(shelf.lvText)
     && !/20/.test(shelf.note),
     `锁住 ${shelf.locked.join('/')} · 开架 ${shelf.open.join('/')} · 进度条 ${shelf.segPips} 格 · 标签「${shelf.lvText}」· 说明「${shelf.note}」`);
@@ -420,7 +428,7 @@ try {
   await ev(`(()=>{const a=document.getElementById('pApp'); const b=document.querySelector('#pApp .p-app-body');
     if(a) a.scrollTop=0; if(b) b.scrollTop=0; return 'ok';})()`);
   // 之后 B6 要量"最长的那一行"，所以把绞盘**放回货架**（有价格 + 有数值文案才量得准）
-  await ev(`(()=>{const g=window.__game; g.save.chart=true; g.save.boats={owned:['golden'],current:'golden'}; g.ui.refreshApp(); return 'ok';})()`);
+  await ev(`(()=>{const g=window.__game; g.save.charts={polar:true}; g.save.boats={owned:['golden'],current:'golden'}; g.ui.refreshApp(); return 'ok';})()`);
   await rafWait(150);
 
   // 商店每一行的「说明 · 当前 → 下一级」都要能塞进一行。
@@ -458,7 +466,12 @@ try {
     // 而文案本身也随等级变长，两个方向叠加，最坏点不一定落在端点上。逐级扫一遍最稳，
     // 代价只是 20 次 innerHTML 重建，几十毫秒的事。
     const over = [];
-    const heights = new Set();
+    // ⚠ 行高要**按结构分组**比，不能混在一起：
+    //   · 一次性工具（绞盘）没有进度条，天生矮一截；
+    //   · 锁定行没有进度条，改成一行「到过「X」后上架」的提示，天生**高**一截。
+    //   这两类各自内部必须一致 —— 折行会再多 16px，一眼看出排版坏了。
+    const heights = new Set();          // 走等级曲线 + 已解锁（有进度条）
+    const lockHeights = new Set();      // 锁定行（有解锁提示，没有进度条）
     let minAvail = 1e9, maxNeed = 0, sample = '', tight = null;
     g.save.coins = 99999999;
     for (let lv = 0; lv < cfg.MAX_LEVEL; lv++) {
@@ -483,7 +496,10 @@ try {
         if (lv === 19 && k === 'line') sample = ds.textContent.trim();
         // 行高一致性只对**走等级曲线**的行成立：一次性工具没有进度条，
         // 天生比别的行矮一截（那是它的结构，不是排版坏了）。
-        if (!cfg.UPGRADES[k].oneShot) heights.add(Math.round(r.getBoundingClientRect().height));
+        if (!cfg.UPGRADES[k].oneShot) {
+          const h = Math.round(r.getBoundingClientRect().height);
+          (r.classList.contains('locked-row') ? lockHeights : heights).add(h);
+        }
         if (need > avail + 0.5) {
           over.push({ k: k, lv: lv, need: need, avail: avail, text: ds.textContent.trim() });
         }
@@ -514,11 +530,13 @@ try {
       if (!worst[o.k] || (o.need - o.avail) > (worst[o.k].need - worst[o.k].avail)) worst[o.k] = o;
     }
     const hs = [...heights].sort((a, b) => a - b);
+    const lhs = [...lockHeights].sort((a, b) => a - b);
     return { over: Object.values(worst), hits: over.length,
       minAvail: minAvail, maxNeed: maxNeed, sample: sample, tight: tight,
       probeWorks: probeWorks, probeNeed: probeNeed, probeAvail: probeAvail,
       listW: listW, widest: widest, heightSpread: hs.length > 1 ? hs[hs.length - 1] - hs[0] : 0,
-      heights: hs };})())`));
+      heights: hs, lockHeights: lhs,
+      lockSpread: lhs.length > 1 ? lhs[lhs.length - 1] - lhs[0] : 0 };})())`));
 
   // 先把"尺子"本身验一遍：量不出溢出的尺子，量什么都是通过。
   check('B8 B6 的测量方法本身有效（能测出一个明显过长的字符串）',
@@ -530,8 +548,9 @@ try {
     rowFit.over.length
       ? rowFit.over.map((x) => `${x.k} Lv${x.lv} 需 ${x.need} > 可用 ${x.avail}px「${x.text}」`).join(' / ')
       : `最紧的一行 ${rowFit.tight.k} Lv${rowFit.tight.lv}：需 ${rowFit.tight.need} / 可用 ${rowFit.tight.avail}px（余量 ${rowFit.tight.gap}px）· 例「${rowFit.sample}」`);
-  check('B7 全部行行高全程一致（折行的那一行会高出 16px，一眼看出排版坏了）',
-    rowFit.heightSpread === 0, `行高 ${JSON.stringify(rowFit.heights)}`);
+  check('B7 同结构的行行高全程一致（折行的那一行会高出 16px，一眼看出排版坏了）',
+    rowFit.heightSpread === 0 && rowFit.lockSpread === 0,
+    `普通行 ${JSON.stringify(rowFit.heights)} · 锁定行 ${JSON.stringify(rowFit.lockHeights)}`);
   check('B9 商店一行不会横向溢出面板（.item 宽度 ≤ 列表宽度）',
     rowFit.widest <= rowFit.listW,
     `.item 最宽 ${rowFit.widest}px · .shop-list ${rowFit.listW}px`);
@@ -695,7 +714,8 @@ try {
         g.spawnFish();
         for (const f of g.fish.active) {
           n++;
-          if (f.def.id === topOf[cfg.zoneAtDepth(-f.mesh.position.y).id]) top++;
+          // ⚠ B4：mapId 必传。鱼是 g.spawnFish() 刷的，所以深度→海域要用**当前地图**
+          if (f.def.id === topOf[cfg.zoneAtDepth(-f.mesh.position.y, g.map.id).id]) top++;
         }
       }
       return { n, top, rate: n ? top / n : 0 };

@@ -55,7 +55,7 @@ const setup = await J(`(async()=>{
   const C = await import('./src/config.js');
   const g = window.__game;
   g.ui.hideOverlay(); g.ui.showHud(true);
-  g.state='air'; g.birds=[]; g.airT=0; g.fireCd=0; g.combo=0; g.mult=1;
+  g.state='air'; g.sky=[]; g.airT=0; g.fireCd=0; g.combo=0; g.mult=1;
   g.save.coins=0; g.ui.setCoins(0);
   g.save.levels.power = 0;   // 1 级爆炸范围 24，最能看出判定圈
   const ids=['sardine','clown','mackerel','snapper','tuna'];

@@ -63,7 +63,7 @@ await J(`(async()=>{
   const g = window.__game;
   g.ui.hideOverlay();
   g.ui.showHud(true);
-  g.state='air'; g.birds=[]; g.airT=0; g.maxAltReached=0; g.fireCd=1e9;
+  g.state='air'; g.sky=[]; g.airT=0; g.maxAltReached=0; g.fireCd=1e9;
   const ids=['sardine','tuna','sword','manta','goldking'];
   const list = ids.map(id=>{ const f=g.fish.acquire(C.SPECIES.find(s=>s.id===id)); f.reset(0,4); return f; });
   g.airFish = list;

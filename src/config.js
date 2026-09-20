@@ -113,6 +113,35 @@ export const ZONES = [
   { id: 'ice-deep', map: 'polar', name: '深层', en: 'ICE DEEP', nick: '极光长廊', top: -340, bottom: -600, color: '#2a6a96', count: 20 },
   { id: 'ice-abyss', map: 'polar', name: '深渊', en: 'ICE ABYSS', nick: '永冻深渊', top: -600, bottom: -920, color: '#123a5e', count: 18 },
   { id: 'ice-trench', map: 'polar', name: '海沟', en: 'ICE TRENCH', nick: '极夜之底', top: -920, bottom: -1240, color: '#05192e', count: 20 },
+
+  // ── ③ 熔岩海沟 LAVA（2200m，热泉与硫烟）─────────────────
+  // 层界按 0/200/560/1040/1600/2200 切。每层的身价跨度比冰封极地更大 ——
+  // 它是"3 张图方案"的终章，也是 **Lv9~20 全部 11 个等级段**的唯一舞台。
+  //
+  // ⚠ 表层必须够深（这里 200m，前两张是 110 / 140）：太浅的话玩家一入水就被迫收线，
+  //   verify8 有一条断言专门钉"刷鱼不贴水面"。
+  { id: 'lava-shelf', map: 'lava', name: '表层', en: 'SULFUR SHELF', nick: '硫磺浅滩', top: 0, bottom: -160, color: '#c9703c', count: 14 },
+  { id: 'lava-flue', map: 'lava', name: '中层', en: 'FLUE FOREST', nick: '烟囱林', top: -160, bottom: -420, color: '#9c4423', count: 20 },
+  { id: 'lava-corridor', map: 'lava', name: '深层', en: 'MOLTEN CORRIDOR', nick: '熔流回廊', top: -420, bottom: -760, color: '#63271a', count: 20 },
+  { id: 'lava-obsidian', map: 'lava', name: '深渊', en: 'OBSIDIAN ABYSS', nick: '黑曜深渊', top: -760, bottom: -1160, color: '#31140f', count: 18 },
+  { id: 'lava-throat', map: 'lava', name: '海沟', en: 'CORE THROAT', nick: '地心之喉', top: -1160, bottom: -1560, color: '#150706', count: 20 },
+
+  // ── ④ 废弃沉船 WRECK（1800m，人造遗迹 · 幽灵船）─────────────────
+  // 层界按 0/180/520/980/1420/1800 切。**深度梯度刻意比身价缓**（1560 → 1800 只有 ×1.15），
+  // 见 §1.4：深度必须永远稀缺，否则"潜得更深"就不再是一件值得期待的事。
+  { id: 'wreck-deck', map: 'wreck', name: '表层', en: 'RUSTED DECK', nick: '锈蚀甲板', top: 0, bottom: -180, color: '#6b7a5a', count: 14 },
+  { id: 'wreck-hold', map: 'wreck', name: '中层', en: 'BROKEN HOLD', nick: '断裂货舱', top: -180, bottom: -520, color: '#4a5a44', count: 20 },
+  { id: 'wreck-keel', map: 'wreck', name: '深层', en: 'TWISTED KEEL', nick: '扭曲龙骨', top: -520, bottom: -980, color: '#33402f', count: 20 },
+  { id: 'wreck-ballast', map: 'wreck', name: '深渊', en: 'BALLAST ABYSS', nick: '压舱深渊', top: -980, bottom: -1420, color: '#202a1e', count: 18 },
+  { id: 'wreck-core', map: 'wreck', name: '海沟', en: 'HULL CORE', nick: '船骸核心', top: -1420, bottom: -1800, color: '#111710', count: 20 },
+
+  // ── ⑤ 深海之声 THE DEEP SONG（2200m，神话 · 终章）────────────
+  // ⚠ 深度上限 2200 是 `LEVELS.maxDepth` 曲线的**终点锚点**（Lv20）—— 批 1 就预留在这里了。
+  { id: 'song-glow', map: 'song', name: '表层', en: 'GLIMMER SEA', nick: '微光之海', top: 0, bottom: -200, color: '#4a6a9a', count: 14 },
+  { id: 'song-echo', map: 'song', name: '中层', en: 'ECHO LAYER', nick: '回响水层', top: -200, bottom: -620, color: '#2e4a78', count: 20 },
+  { id: 'song-bass', map: 'song', name: '深层', en: 'BASS TRENCH', nick: '低音海沟', top: -620, bottom: -1180, color: '#1d3054', count: 20 },
+  { id: 'song-mute', map: 'song', name: '深渊', en: 'MUTE ABYSS', nick: '无声深渊', top: -1180, bottom: -1700, color: '#101c33', count: 18 },
+  { id: 'song-source', map: 'song', name: '海沟', en: 'SOURCE FLOOR', nick: '声源之底', top: -1700, bottom: -2200, color: '#070c17', count: 20 },
 ];
 
 /** 这张地图包含的深度海域（顺序 = 从浅到深） */
@@ -121,14 +150,27 @@ export const zonesOfMap = (mapId) => ZONES.filter((z) => z.map === mapId);
 /**
  * 按世界深度找所在的海域（深度尺 / 区域横幅 / 刷鱼都走它）。
  *
- * ⚠ **必须带地图**：两张地图的表层都是 `0 ~ -70` 左右，不隔离的话
- * 在冰封极地的 30m 处会返回「阳光浅滩」。默认值取第一张图只是为了
- * 让不关心地图的老调用点（纯数值测试）还能跑。
+ * ⚠⚠ **`mapId` 是必传参数，而且必须是真的存在的地图 id。**
+ *
+ * 两张地图的表层都是 `0 ~ 140`，不隔离的话在冰封极地的 30m 处会返回「阳光浅滩」。
+ * 这里**故意不设默认值**（GAMEPLAY §6.2 B4）：默认参数会让新的调用点**忘传也不报错**，
+ * 而是静默地查到另一张图的同名层 —— 症状是"鱼的身价偶尔不对"，不报错、不闪退。
+ * 现在忘传 / 传了脏 id 会**立刻抛错**，把静默失败改成显式失败。
+ *
+ * ⚠ 顺手记一条同名陷阱：`zoneAtDepth(y)`（深度→海域）和 `mapOfZone(id)`（海域→地图）
+ * 是**两个方向**，别写反。
  */
-export function zoneAtDepth(y, mapId = DEFAULT_MAP.id) {
+export function zoneAtDepth(y, mapId) {
   const zs = zonesOfMap(mapId);
+  if (zs.length === 0) {
+    throw new Error(
+      `zoneAtDepth(y, mapId) 必须传一个有效的地图 id，收到 ${JSON.stringify(mapId)}。`
+      + `（两张图的表层都在 0~140m，不带地图会静默查到另一张图的同名层；`
+      + `地图 id 见 MAPS：${MAPS.map((m) => m.id).join(' / ')}）`,
+    );
+  }
   for (const z of zs) if (y <= z.top && y > z.bottom) return z;
-  return zs[zs.length - 1] || ZONES[ZONES.length - 1];
+  return zs[zs.length - 1];
 }
 
 // ────────────────── 换图门槛（v0.7：已换成「海图 + 船」）──────────────────
@@ -142,7 +184,7 @@ export function zoneAtDepth(y, mapId = DEFAULT_MAP.id) {
 //     （见下面的 SEABED / CHEST）。
 //
 // 现在的门槛只剩两条，都定义在别处：
-//   ① **钓到海图**  → `SEABED` / `CHEST`（宝箱就在首图最底部，拿到即 `save.chart = true`）
+//   ① **钓到海图**  → `CHARTS` / `CHEST`（宝箱在本图最底部，拿到即写进 `save.charts`）
 //   ② **拥有任意一艘船** → `BOATS`（10,000，三条船同价）
 // 判定在 `game.js` 的 `mapProgress()`，界面只渲染它给出的 `conds`。
 
@@ -155,11 +197,15 @@ export function zoneAtDepth(y, mapId = DEFAULT_MAP.id) {
 //
 // 字段：
 //   zones    这张地图包含哪些深度海域（引用 ZONES 的 id）
-//   license  进入本图要付的许可证金币（0 = 初始地图）
+//   license  ⚠ **@retired**（v0.7 第二批退役；2026-09-20 把残留的判定逻辑也清了）
+//            原本是「进入本图要付的许可证金币」。现在 **5 张图全是 0，且没有任何代码读它** ——
+//            `mapProgress()` / `buyMap()` / `enterMap()` 里的许可证分支都已删除，
+//            进图门槛只有「**海图 + 船**」。**新代码一律不要读它。**
+//            保留这个字段只是为了老存档与回归夹具里那个 `licenses` 不炸（见 game.js 的同名存档字段）。
 //   hook     机制钩子的标识符，world.js / game.js 按它加载额外逻辑（null = 无）
 //   theme    视觉主题（水体渐变等），见 world.js
 //
-// 进度门槛（内容完成度 + 潜到上限 + 许可证）在 game.js 的 mapProgress 里算；
+// 进度门槛（**海图 + 船**）在 game.js 的 mapProgress 里算；
 // 「内容完成度」的口径见上面的 CODEX_GATE（唯一来源）。
 export const MAPS = [
   {
@@ -168,7 +214,7 @@ export const MAPS = [
     en: 'CALM BAY',
     color: '#2ea8d8',            // 主界面大标题的辉光色
     zones: ['sunlit', 'twilight', 'deep', 'abyss', 'trench'],
-    license: 0,
+    license: 0,                  // @retired 恒为 0、无读者 —— 门槛是「海图 + 船」，见文件头字段说明
     hook: null,
     desc: '风平浪静的近海。从阳光浅滩一路向下，能一直潜到海沟尽头。',
   },
@@ -182,7 +228,7 @@ export const MAPS = [
     //   图鉴 90% / 潜到上限 / 33,233 金币三条**全部取消**（见 config 的 BOATS 与 game.js 的 mapProgress）。
     //   钱没有被删掉，只是从"过路费"变成了"买船"（10,000）——
     //   而且船是**玩家真的能用的东西**，比一笔过路费更像奖励。
-    license: 0,
+    license: 0,                  // @retired 恒为 0、无读者 —— 门槛是「海图 + 船」，见文件头字段说明
     hook: 'iceberg',
     // 水体从冰蓝渐到墨蓝 —— 这是"换图了"最直观的信号，比任何 UI 都直接。
     //
@@ -233,8 +279,122 @@ export const MAPS = [
       snow: 1.7,             // 海雪密度倍率（极地水里的悬浮冰晶比温带海多）
       icePillars: true,      // 冰柱地形（0 ~ −600m 贴着两侧岩壁往下挂）
       iceCeiling: true,      // 头顶的冰层顶盖：从 0m 往下压的一整排冰凌
+      // 海床配色（v0.8）：本图底部现在也铺海床 + 宝箱（箱里是**熔岩海图**）。
+      // 不换色的话，温带那套灰蓝地板放在冰层下会显得脏。
+      seabed: { floor: 0x2f4455, rock: 0x3d5768 },
     },
     desc: '冰层之下，还有一整个世界。',
+  },
+  {
+    id: 'lava',
+    name: '熔岩海沟',
+    en: 'LAVA',
+    color: '#e2703a',
+    zones: ['lava-shelf', 'lava-flue', 'lava-corridor', 'lava-obsidian', 'lava-throat'],
+    // ⚠ 许可证恒为 0（机制已退役）。进图门槛由 `mapProgress()` 算：
+    //   「**上一张图**（冰封极地）底部的海图 + 一艘船」，见下面的 CHARTS。
+    license: 0,                  // @retired 恒为 0、无读者 —— 门槛是「海图 + 船」，见文件头字段说明
+    // 机制钩子：热泉上冲。world.js 按它加载热泉柱，game.js 在上升阶段读它给的加速。
+    hook: 'vent',
+    theme: {
+      // 归一化位置 t ∈ [0,1]（0 = 海底，1 = 天空顶）—— 同冰封极地，见那边的说明。
+      waterStops: [
+        [0.00, '#0b0403'],   // 地心之喉：几乎全黑，只剩一点余温的红
+        [0.16, '#210906'],
+        [0.38, '#4e1a0c'],
+        [0.62, '#8f3c17'],
+        [0.84, '#c96a2c'],
+        [1.00, '#f0a45e'],   // 海面：被岩浆照亮的硫烟
+      ],
+      // 水面以上的天空：火山灰。没有太阳，只有一层压得很低的赭红。
+      skyStops: [
+        [0, '#a4552c'],
+        [180, '#7a3a20'],
+        [480, '#4a2216'],
+        [900, '#2a1210'],
+        [1500, '#160a0a'],
+        [2200, '#0a0505'],
+        [3000, '#040202'],
+      ],
+      skyDim: 0.45,          // 灰遮住了太阳（不压暗的话大白天会把水体渐变冲掉）
+      snow: 1.2,             // 火山灰 —— 复用海雪那层粒子，换的是密度
+      // ⚠ 本图**没有** aurora / icePillars / iceCeiling，也**没有海床**
+      //   （它是最后一张图，底部没有"下一张图的海图"可给）。
+    },
+    desc: '海水是温的。这不正常。',
+  },
+  {
+    id: 'wreck',
+    name: '废弃沉船',
+    en: 'WRECK',
+    color: '#8fa86a',
+    zones: ['wreck-deck', 'wreck-hold', 'wreck-keel', 'wreck-ballast', 'wreck-core'],
+    // ⚠ 许可证恒为 0（机制已退役）。进图门槛由 `mapProgress()` 算：
+    //   「**上一张图**（熔岩海沟）底部的沉船海图 + 一艘船」，见下面的 CHARTS。
+    license: 0,                  // @retired 恒为 0、无读者 —— 门槛是「海图 + 船」，见文件头字段说明
+    // 机制钩子：沉船格子。world.js 按它长出残骸的空腔，game.js 在下潜阶段读它给的"免疫区"。
+    hook: 'wreck',
+    theme: {
+      // 归一化位置 t ∈ [0,1]（0 = 海底，1 = 天空顶）—— 同冰封极地，见那边的说明。
+      waterStops: [
+        [0.00, '#0a0d08'],
+        [0.16, '#161d12'],
+        [0.38, '#2a3822'],
+        [0.62, '#465a36'],
+        [0.84, '#6e8450'],
+        [1.00, '#9fb473'],
+      ],
+      // 水面以上的天空：阴天。没有太阳，也没有星星 —— 只有一层压得很低的灰绿。
+      skyStops: [
+        [0, '#8a9a72'],
+        [180, '#63734f'],
+        [480, '#424f34'],
+        [900, '#2a331f'],
+        [1500, '#171d11'],
+        [2200, '#0b0f08'],
+        [3000, '#040603'],
+      ],
+      skyDim: 0.42,          // 阴天：把太阳压暗，但别压到像极夜（那是另一张图的身份）
+      snow: 0.9,             // 水里的悬浮物比别处少（锈水是浑的，但不飘东西）
+      // 海床配色：本图底部也有海床 + 宝箱（箱里是**深海之声的海图**）。
+      seabed: { floor: 0x2a2e20, rock: 0x3a402c },
+    },
+    desc: '一艘没有人记得名字的船。它比这片海还老。',
+  },
+  {
+    id: 'song',
+    name: '深海之声',
+    en: 'DEEP SONG',
+    color: '#7fa8e8',
+    zones: ['song-glow', 'song-echo', 'song-bass', 'song-mute', 'song-source'],
+    // ⚠ 许可证恒为 0（机制已退役）。进图门槛 = 「上一张图（废弃沉船）底部的海图 + 一艘船」。
+    license: 0,                  // @retired 恒为 0、无读者 —— 门槛是「海图 + 船」，见文件头字段说明
+    // 机制钩子：海妖之歌。game.js 按它起周期性的"鱼群聚集"，world.js 按它画声波环。
+    hook: 'siren',
+    theme: {
+      waterStops: [
+        [0.00, '#050810'],   // 声源之底：黑到几乎看不见
+        [0.16, '#0c1424'],
+        [0.38, '#16294a'],
+        [0.62, '#2a4c80'],
+        [0.84, '#4f7cb4'],
+        [1.00, '#8fb4dc'],   // 海面：一种偏冷的、像回声一样的浅蓝
+      ],
+      // 水面以上的天空：极夜式的深蓝，但没有极光 —— 这张图的"光"在水下。
+      skyStops: [
+        [0, '#7a9cc8'],
+        [180, '#4a6a9a'],
+        [480, '#2a3f66'],
+        [900, '#182742'],
+        [1500, '#0d1526'],
+        [2200, '#060a12'],
+        [3000, '#020306'],
+      ],
+      skyDim: 0.36,
+      snow: 1.35,            // 水里飘着细小的磷光颗粒 —— 这张图的"声音"看得见
+      // 海床配色：本图是最后一张，底部**没有海床**（没有下一张图的海图可给）。
+    },
+    desc: '越往下越安静。安静到你能听见自己在想什么。',
   },
 ];
 
@@ -267,8 +427,9 @@ export function mapMaxDepth(map) {
   return d;
 }
 
-// ───────────────────────── 海床 / 宝箱 / 海图（v0.7）─────────────────────────
-// 首图的最底部铺一层**海床**，海床上放一只**宝箱**，箱里是通往第 2 张图的**海图**。
+// ───────────────────────── 海床 / 宝箱 / 海图（v0.7 起，v0.8 推广到多图）─────────────────────────
+// 每张**后面还有图**的地图，最底部都铺一层**海床**，海床上放一只**宝箱**，
+// 箱里是**下一张图**的海图。想换图就得一路潜到这张图的尽头。
 //
 // 为什么要"下到底才能拿到海图"：它是换图的**唯一内容条件**（另一个是买船，见 BOATS）——
 // 把"看遍这片海"从"钓到 90% 的鱼种"换成"潜到这张图的尽头"。
@@ -277,21 +438,37 @@ export function mapMaxDepth(map) {
 //
 // ⚠ 宝箱是**碰到即得**（不占鱼护、不参与空中结算）：它是剧情道具不是渔获。
 //   走"钓上来 → 抛向天空 → 打下来"那条链的话，玩家打丢了还得重钓，那不是设计意图。
+//
+// ⚠ v0.8：从"只有首图有海床"改成**按图取**（`CHARTS[].from` 决定哪张图的底部有箱子）。
+//   最后一张图（熔岩海沟）没有海床 —— 它没有"下一张图"可以给。
 export const SEABED = {
-  map: 'calm-bay',      // 哪张图有海床（目前只有首图 —— 它是"新手图"，也是第一道门槛）
   margin: 26,           // 海床面比本图最低点再往下多少米（别让鱼贴着地面刷）
   rocks: 9,             // 海床上的石头块数（纯装饰，但"地面"得有东西才像地面）
 };
 
+/** 宝箱的**几何**（三张图共用一套外形，配色走 `theme.seabed`） */
 export const CHEST = {
   x: 30,                // 横向位置（世界单位，正数 = 偏右，避开正下方那条下潜线）
   w: 20, h: 14, d: 15,  // 箱体尺寸（世界单位）
-  gold: 300,            // 开箱给的一点"彩头"金币（海图本身不卖钱）
-  glow: 0xffcc33,
 };
 
-/** 海图 —— 换图用的剧情道具（拿到即写进存档，见 game.js 的 `save.chart`） */
-export const CHART = { id: 'chart', name: '极地海图', en: 'POLAR CHART' };
+/**
+ * 海图 —— 换图用的剧情道具。**每张图一张**，藏在 `from` 那张图的底部宝箱里。
+ *
+ * ⚠ 拿到之后写进 `save.charts`（一个 id → true 的表），不是原来的单个 boolean。
+ *   老存档的 `save.chart === true` 会在读档时迁移成 `{ polar: true }`。
+ */
+export const CHARTS = [
+  { id: 'polar', name: '极地海图', en: 'POLAR CHART', from: 'calm-bay', gold: 300, glow: 0xffcc33 },
+  { id: 'lava', name: '熔岩海图', en: 'LAVA CHART', from: 'polar', gold: 600, glow: 0xff8844 },
+  { id: 'wreck', name: '沉船海图', en: 'WRECK CHART', from: 'lava', gold: 1200, glow: 0x9fd06a },
+  { id: 'song', name: '深海海图', en: 'DEEP CHART', from: 'wreck', gold: 2400, glow: 0x8fb4e8 },
+];
+
+/** 这张图的底部宝箱里装的是哪张海图（没有 = 这张图不铺海床） */
+export const chartFrom = (mapId) => CHARTS.find((c) => c.from === mapId) || null;
+/** 按 id 取海图定义 */
+export const chartById = (id) => CHARTS.find((c) => c.id === id) || null;
 
 // ───────────────────────── 船只（v0.7）─────────────────────────
 // 三艘**同价（10,000）**的船，各带一个效果 —— 玩家买**任意一艘**都能去第 2 张图，
@@ -475,6 +652,128 @@ export const ICEBERG = {
   slowTime: 1.5,        // 减速持续秒数
   slowScale: 0.42,      // 减速期间下潜速度倍率
   cooldown: 0.8,        // 同一块冰的重复触发间隔
+};
+
+/**
+ * 热泉上冲（批 4，熔岩海沟专属）—— 和浮冰**正好相反**：
+ * 浮冰是纯代价（弹开 + 减速 + 不收线），热泉是纯好处（上升加速）。
+ *
+ * 上升阶段经过热泉柱时，收线速度乘 `boost`，等于**免费送你一段**。
+ * 代价是隐性的：**你会从鱼群旁边飞过去** —— 所以它不是"无脑强"，
+ * 而是一个"要不要贴着它走"的选择。
+ *
+ * ⚠ 它和"绞盘·快速回收"的区别：绞盘是玩家**按按钮主动跳过**，
+ *   热泉是**被动加速** —— 一个是决策，一个是地形。两个一起用才有"这条路我熟"的感觉。
+ *
+ * ⚠ 柱子是**有限高**的（不是从海底一根通到水面）：每条 180~320m，
+ *   随机分布在不同深度。通到顶的话整个上升段都在加速，那就没有"经过"这件事了。
+ */
+export const HEAT_VENT = {
+  count: [2, 3],        // 生成几条热泉柱
+  radius: [18, 30],     // 柱子的横向半宽（世界单位）= 加速判定的半宽
+  height: [180, 320],   // 每条柱子的高度（米）
+  top: 160,             // 最上面那条的顶端不高于这个深度（别顶到水面附近）
+  boost: 1.8,           // 柱子里收线速度的倍率
+};
+
+/**
+ * 沉船格子（批 8，废弃沉船专属）—— 全游戏第一个**空间策略**机制。
+ *
+ * 残骸内部有空腔（"格子"）。钩子在格子里时**免疫下潜撞鱼** —— 代价是：
+ *   ① 格子横向很窄（视野狭窄，容易在边缘撞上鱼）；
+ *   ② 格子是**有限的**，出了这一段就没了，而且它不覆盖整张图。
+ *
+ * ⚠ 为什么这是"空间策略"而不是又一个"加速/减速"：它改变的是**玩家选哪条路下潜** ——
+ *   沿着格子往下走是安全的，但格子不连续，所以玩家必须规划"哪一段走格子、哪一段自己躲"。
+ * ⚠ 免疫**只作用于下潜阶段的撞鱼**，不影响上升阶段的串鱼（在格子里照样能串）。
+ */
+export const WRECK_CELL = {
+  count: [4, 6],        // 生成几个格子
+  w: [26, 46],          // 格子横向宽度（世界单位）
+  h: [120, 240],        // 格子高度（米）
+  top: 120,             // 最上面那个格子的顶端不高于这个深度
+  margin: 0.34,         // 横向位置离中线的最大偏移比例（别贴边，不然玩家看不见）
+};
+
+/**
+ * 海妖之歌（批 8b，深海之声专属）—— 周期性的"刷分时机"。
+ *
+ * 每  秒唱一次，持续  秒：**这段时间里所有鱼都朝鱼钩游过来**。
+ * 于是它同时是**机会**（鱼自己送上门）和**风险**（游过来的可能是一堆河豚）。
+ *
+ * ⚠  是这条机制的另一半：每次开唱有 20% 概率**把 Boss 招来**。
+ *   所以玩家在"要不要趁歌声刷一波"这件事上是有取舍的 —— 它不是纯奖励。
+ * ⚠ 和热泉/沉船格子的区别：那两个是**地形**（一直在那儿），这个是**节拍**（按时来）。
+ */
+export const SIREN = {
+  period: 60,          // 每隔多少秒唱一次
+  duration: 12,        // 每次唱多久
+  speedMul: 1.15,      // 歌声里的鱼游多快（略快于巡游，但不是瞬移）
+  bossChance: 0.2,     // 每次开唱招来 Boss 的概率
+  ring: 260,           // 视觉：声波环的最大半径
+};
+
+// ───────────────────────── 鱼的行为模式（批 7）─────────────────────────
+// 现在所有鱼都是"匀速直游"。加一个 `def.behavior` 字段，把游动逻辑分派出去
+// （`fish.js` 的 `_steer()`），**新鱼种不写 `behavior` 就是 `cruise`**，向后兼容。
+//
+// 参数单位都是**世界单位**（= 米）。判定半径的基准：玩法区宽 154、鱼半径 7~29，
+// 所以 46 大约等于"六个鱼身"，玩家在待机视野里能看见它启动。
+//
+// ⚠ **教学图（宁静海湾）一条都不加** —— 教学关卡的复杂度预算很宝贵（EXPANSION §3.2 ①）。
+export const BEHAVIOR = {
+  /** 追猎：缓慢朝鱼钩游过来，撞到就触发收线 */
+  hunt:   { radius: 110, speedMul: 0.72 },
+  /** 逃逸：看到鱼钩（半径内）就**反向加速**逃跑 */
+  flee:   { radius: 46, speedMul: 1.60 },
+  /** 伏击：静止不动，玩家进入半径内才突然冲刺 */
+  ambush: { radius: 28, speedMul: 2.30 },
+  /** 冲刺：匀速游 `run` 秒 → 静止 `rest` 秒 → 再冲 */
+  dash:   { run: 2.0, rest: 0.8, speedMul: 1.75 },
+};
+
+/**
+ * 鱼的四种特殊状态（批 7）—— 一组"**被串上之后才生效**"的后果。
+ *
+ * 为什么需要它们：`hazard`（扣钱鱼）是**躲避**类的负反馈，而串鱼这个动作本身
+ * 一直是"只有好处"。这四条让"串上它"也有代价，于是**选择**才真正存在。
+ *
+ * ⚠ 配置字段叫 `trait`（不是 `state`）：`Fish` 实例上已经有一个 `state`
+ *   （`FISH_STATE.SWIM/CAUGHT/AIR/DEAD`），两个都叫 state 会让读代码的人
+ *   把"这条鱼在哪一段"和"它带什么特殊效果"搞混。
+ */
+export const TRAIT = {
+  /** 带电：占 **2 个鱼护位** + 屏幕短促闪白 */
+  charged: { slots: 2, flash: true, text: '带电 · 多占 1 个鱼护位' },
+  /** 冰冻：本竿收线速度 −25% */
+  frozen:  { ascendMul: 0.75, text: '冰冻 · 收线 −25%' },
+  /** 灼热：本竿鱼护上限 −1（只触发一次，不叠加） */
+  burning: { creel: -1, text: '灼热 · 鱼护上限 −1' },
+  /** 幻影：会留下 2 个残影，只有真身能被串上 */
+  phantom: { decoys: 2, text: '幻影 · 只有真身能串' },
+};
+
+// ───────────────────────── Boss 框架（批 7）─────────────────────────
+// 每张图恰好一个 Boss（`SPECIES[].boss === true`）。它**不参与稀有度抽签**，
+// 而且**只在满足条件时刷出来** —— 这是它和"一条血很厚的普通鱼"的全部区别。
+//
+// ⚠ 触发条件写在鱼种上（`bossWhen: { depth, caught }`），不写在这里：
+//   那是"这条鱼什么时候出现"，属于鱼的数据。
+export const BOSS = {
+  /** 顶部血量条：每 `segmentHp` 比例画一段，每打掉一段触发一次"换模式" */
+  segments: 3,
+  /** 出场：全屏震动 + 慢镜头 */
+  shake: 28,
+  slowmoScale: 0.28,
+  slowmoTime: 0.6,
+  /** 每换一次模式，它的速度乘这个数（越来越疯） */
+  phaseSpeedMul: 1.35,
+  /**
+   * 换模式时依次切到哪种行为（`BEHAVIOR` 的键；`'cruise'` = 匀速直游）。
+   * ⚠ 顺序是有讲究的：**先跑、再逃、后伏击** —— 越往后越"不让你靠近"。
+   *   反过来（先伏击后逃逸）的话，玩家刚摸清它的套路它就变简单了。
+   */
+  phases: ['cruise', 'flee', 'dash', 'ambush'],
 };
 
 // ───────────────────────── 鱼类图鉴 ─────────────────────────
@@ -683,14 +982,14 @@ export const SPECIES = [
 
   // ── 霜蓝水道 Ice Twilight（70 ~ 170m）────────────────────
   {
-    id: 'silver-cod', name: '银鳕', zones: ['ice-twilight'], value: 62, hp: 6,
+    id: 'silver-cod', name: '银鳕', behavior: 'hunt', zones: ['ice-twilight'], value: 62, hp: 6,
     radius: 5.6, speed: 36, weight: 18, school: 4,
     desc: '全身覆着一层真银似的鳞，光打上去会整条亮一下。深一点的水里最好认。',
     color: 0xdceaf5, belly: 0xffffff, stripe: 0x9fb8cc, stripeN: 2, spots: 0xffffff,
     body: [6.0, 2.3, 1.3], tail: [2.1, 2.3], fin: [1.6, 1.2], eye: 0.6,
   },
   {
-    id: 'narwhal-calf', name: '独角鲸幼崽', zones: ['ice-twilight'], value: 78, hp: 10,
+    id: 'narwhal-calf', name: '独角鲸幼崽', behavior: 'flee', zones: ['ice-twilight'], value: 78, hp: 10,
     radius: 6.8, speed: 48, weight: 12,
     desc: '鼻子上顶着一根还没长开的长牙，会拿它戳冰块玩。完全不知道自己很值钱。',
     color: 0x9fb4c8, belly: 0xeaf4ff, bill: 5.2, spots: 0xd8e4f0,
@@ -704,7 +1003,7 @@ export const SPECIES = [
     body: [7.6, 2.8, 1.7], tail: [2.7, 3.1], fin: [2.0, 1.4], eye: 0.7,
   },
   {
-    id: 'ice-crystal', name: '冰晶鱼', zones: ['ice-twilight'], value: 140, hp: 9,
+    id: 'ice-crystal', name: '冰晶鱼', behavior: 'ambush', zones: ['ice-twilight'], value: 140, hp: 9,
     radius: 5.6, speed: 28, weight: 8, school: 3,
     desc: '身上长满棱柱状的透明结晶，自己会发光。据说整条鱼就是一块长成鱼形的冰。',
     color: 0xa8e8ff, emissive: 0x6fd8ff, emissiveIntensity: 1.0, glow: [7.4, 0x8fe8ff],
@@ -722,7 +1021,7 @@ export const SPECIES = [
     body: [5.0, 2.4, 1.5], tail: [1.9, 2.4], fin: [1.8, 1.5], eye: 0.75,
   },
   {
-    id: 'ice-eel', name: '深海冰鳗', zones: ['ice-deep'], value: 240, hp: 9,
+    id: 'ice-eel', name: '深海冰鳗', trait: 'frozen', behavior: 'dash', zones: ['ice-deep'], value: 240, hp: 9,
     radius: 6.6, speed: 52, weight: 10,
     desc: '一条半透明的长鞭子，体内有一条淡蓝的脊线在流动。游起来几乎没有声音。',
     color: 0xbfe0f0, emissive: 0x5fc8ff, emissiveIntensity: 0.6, glow: [6.4, 0x8fd8ff],
@@ -754,7 +1053,7 @@ export const SPECIES = [
     body: [9.4, 3.2, 2.2], tail: [3.4, 3.8], fin: [2.8, 2.0], eye: 0.6,
   },
   {
-    id: 'frozen-ghost', name: '冰封幽灵', zones: ['ice-abyss'], value: 700, hp: 15,
+    id: 'frozen-ghost', name: '冰封幽灵', trait: 'frozen', zones: ['ice-abyss'], value: 700, hp: 15,
     radius: 6.8, speed: 36, weight: 6,
     desc: '一具被冻在冰里的轮廓，冰化了它还在游。没人愿意细看它长什么样。',
     color: 0xcfeaff, emissive: 0x9fd8ff, emissiveIntensity: 0.9, glow: [7.6, 0xbfe8ff],
@@ -770,7 +1069,7 @@ export const SPECIES = [
     body: [11.4, 1.9, 0.9], tail: [2.1, 1.8], fin: [1.2, 0.9], eye: 0.55,
   },
   {
-    id: 'frost-throat', name: '霜之喉', zones: ['ice-abyss'], value: 1150, hp: 40,
+    id: 'frost-throat', name: '霜之喉', trait: 'frozen', behavior: 'hunt', zones: ['ice-abyss'], value: 1150, hp: 40,
     radius: 8.8, speed: 28, weight: 4,
     desc: '额头挂着一盏冷光的灯，嘴张开比身体还宽。呼出来的气在深海里也是白的。',
     color: 0x4a5a6a, emissive: 0x8fe8ff, emissiveIntensity: 0.55, lure: true,
@@ -788,7 +1087,7 @@ export const SPECIES = [
     body: [8.0, 3.4, 4.2], tail: [3.6, 4.2], fin: [2.6, 2.0], eye: 0.7,
   },
   {
-    id: 'polar-night-king', name: '极夜之王', zones: ['ice-trench'], value: 1900, hp: 120,
+    id: 'polar-night-king', name: '极夜之王', bossWhen: { depth: 900, caught: 4 }, zones: ['ice-trench'], value: 1900, hp: 120,
     radius: 13.2, speed: 32, weight: 1.4,
     // ⚠ 本图的 Boss：不参与稀有度抽签（它本身就已经是"稀有"了），
     //   再叠一层金色描边会让"金色"这个信号失去意义。
@@ -797,6 +1096,465 @@ export const SPECIES = [
     color: 0x1a2a44, belly: 0x2a4a6a, emissive: 0x6f9fff, emissiveIntensity: 0.8,
     glow: [16.0, 0x8fb8ff], crown: true, spots: 0xbfe0ff, fangs: 8,
     body: [9.0, 4.4, 3.2], tail: [3.4, 4.0], fin: [2.4, 1.9], eye: 1.0,
+  },
+
+  // ══════════════════ ③ 熔岩海沟 LAVA（2200m）══════════════════
+  // 血量按同一条基准标定：**浅层偏低，每一层内部极差 ≥ 2.2 倍**。
+  // 身价 48 → 5,320（上一张图 1900 的 2.8 倍，见 EXPANSION §2.1 的两个梯度）。
+
+  // ── 硫磺浅滩 Sulfur Shelf（0 ~ 200m）──────────────────────
+  {
+    id: 'ember-snapper', name: '火纹鲷', zones: ['lava-shelf'], value: 48, hp: 2,
+    radius: 3.8, speed: 48, weight: 26, school: 5,
+    desc: '身上有烧红的条纹，一群游过去像一串被风撩起来的炭火。',
+    color: 0xd4552a, belly: 0xffc089, stripe: 0xffd08a, stripeN: 4, spots: 0xffe6b8,
+    body: [5.0, 2.1, 1.2], tail: [2.0, 2.1], fin: [1.4, 1.0], eye: 0.6,
+  },
+  {
+    id: 'magma-shrimp', name: '熔岩虾', behavior: 'dash', zones: ['lava-shelf'], value: 72, hp: 4,
+    radius: 3.4, speed: 34, weight: 20,
+    desc: '壳是半透明的，里面那点橙一直亮着，像提着灯笼在水里走。',
+    color: 0xe87a3a, belly: 0xffc890, emissive: 0xff6a20, emissiveIntensity: 0.6,
+    glow: [4.6, 0xff8a3a], whisker: 6, legs: 6,
+    body: [4.2, 1.9, 1.7], tail: [2.4, 1.6], fin: [1.1, 0.9], eye: 0.7,
+  },
+  {
+    id: 'soot-jack', name: '黑烟鲹', behavior: 'hunt', zones: ['lava-shelf'], value: 105, hp: 6,
+    radius: 4.4, speed: 54, weight: 14,
+    desc: '一群游过去像一团散不开的黑烟，只有转弯时才看得见侧线那道红。',
+    color: 0x2a2226, belly: 0x4a3a3a, stripe: 0xd45a2a, stripeN: 2,
+    body: [5.6, 2.4, 1.3], tail: [2.2, 2.4], fin: [1.4, 1.1], eye: 0.75,
+  },
+  {
+    id: 'sulfur-puffer', name: '硫磺河豚', zones: ['lava-shelf'], value: 61, hp: 3,
+    radius: 4.6, speed: 30, weight: 11,
+    desc: '扣钱鱼。一肚子硫磺气，鼓起来像一颗脏兮兮的灯泡。打中它会炸开扣 30 金币。',
+    color: 0xc8c02a, hazard: true, spots: 0x6a5a10, spikes: 14, belly: 0xf0ec8a,
+    body: [3.6, 3.2, 3.0], tail: [1.4, 2.0], fin: [1.2, 1.0], eye: 0.85,
+  },
+
+  {
+    id: 'mimic-puffer', name: '假河豚', zones: ['lava-shelf'], value: 150, hp: 4,
+    radius: 4.6, speed: 34, weight: 5,
+    // ⚠ 拟态（`behavior: 'dash'`）：**外形参数刻意和硫磺河豚一模一样**，
+    //   只有身价（61 → 260）和行为模式不同。设计意图是打破"看到河豚就躲"的条件反射 ——
+    //   真河豚是 `ambush`（静止不动等你靠近），假河豚是 `dash`（有节奏地一顿一顿游），
+    //   所以**细心玩家有一条线索**，而不是纯粹靠运气。
+    behavior: 'dash',
+    desc: '长得和硫磺河豚一模一样，但它是能吃的。别急着躲。',
+    color: 0xc8c02a, spots: 0x6a5a10, spikes: 14, belly: 0xf0ec8a,
+    body: [3.6, 3.2, 3.0], tail: [1.4, 2.0], fin: [1.2, 1.0], eye: 0.85,
+  },
+
+  // ── 烟囱林 Flue Forest（200 ~ 560m）───────────────────────
+  {
+    id: 'iron-fish', name: '赤铁鱼', zones: ['lava-flue'], value: 172, hp: 9,
+    radius: 5.0, speed: 42, weight: 16,
+    desc: '鳞片硬得像氧化过的铁皮，敲上去是闷的。它游得慢，但不太怕挨打。',
+    color: 0x8a4a34, belly: 0xc98a64, spots: 0x5a2e20, stripe: 0x3a1c14, stripeN: 3,
+    body: [5.8, 2.6, 1.5], tail: [2.2, 2.4], fin: [1.6, 1.2], eye: 0.7,
+  },
+  {
+    id: 'furnace-eel', name: '熔炉鳗', zones: ['lava-flue'], value: 218, hp: 14,
+    radius: 6.6, speed: 36, weight: 12,
+    desc: '一条会游的烟囱。背脊上那排孔每过几秒吐一串气泡，热气从里面透出来。',
+    color: 0x6a3020, belly: 0xb0603a, emissive: 0xff5a1a, emissiveIntensity: 0.5,
+    glow: [6.4, 0xff7a2a], fangs: 7,
+    body: [9.6, 1.8, 1.4], tail: [2.4, 1.6], fin: [1.2, 0.9], eye: 0.6,
+  },
+  {
+    id: 'magma-squid', name: '岩浆乌贼', behavior: 'flee', zones: ['lava-flue'], value: 266, hp: 20,
+    radius: 6.0, speed: 30, weight: 9,
+    desc: '喷的不是墨，是一团还在发光的浆。喷完之后水里会留一条橙色的痕。',
+    color: 0x9a3a2a, belly: 0xd87a4a, emissive: 0xd84a1a, emissiveIntensity: 0.45,
+    legs: 8, spots: 0xff8a3a,
+    body: [4.6, 3.4, 3.0], tail: [1.6, 1.8], fin: [1.6, 1.4], eye: 0.9,
+  },
+  {
+    id: 'volcano-bream', name: '火山鲷', zones: ['lava-flue'], value: 390, hp: 12,
+    radius: 5.4, speed: 44, weight: 8,
+    desc: '通体暗红，只有鳃盖边缘是亮橙的 —— 那是它身上最热的地方。',
+    color: 0xa83a24, belly: 0xe89060, stripe: 0xffa050, stripeN: 3, fanFin: 1.6,
+    body: [5.4, 3.0, 1.8], tail: [2.4, 2.6], fin: [1.8, 1.4], eye: 0.8,
+  },
+
+  // ── 熔流回廊 Molten Corridor（560 ~ 1040m）────────────────
+  {
+    id: 'blaze-sword', name: '炽焰剑鱼', trait: 'charged', zones: ['lava-corridor'], value: 530, hp: 18,
+    radius: 7.0, speed: 58, weight: 7,
+    desc: '上颌那把"剑"是烧红的。它冲过来的时候，水会先一步变暖。',
+    color: 0xc0502a, belly: 0xffb070, emissive: 0xff6a20, emissiveIntensity: 0.55,
+    glow: [7.0, 0xff8a30], crest: true, crestColor: 0xffb060,
+    body: [9.0, 2.2, 1.6], tail: [2.8, 3.0], fin: [1.6, 1.2], eye: 0.7,
+  },
+  {
+    id: 'core-lantern', name: '熔核灯笼鱼', behavior: 'ambush', zones: ['lava-corridor'], value: 670, hp: 28,
+    radius: 6.8, speed: 26, weight: 5,
+    desc: '额前那盏灯里装的像是从地核里舀出来的一勺东西。看久了眼睛会疼。',
+    color: 0x3a2a26, belly: 0x7a4a3a, emissive: 0xff7a20, emissiveIntensity: 0.7,
+    lure: true, fangs: 10, bignose: 0.55,
+    body: [5.6, 4.2, 3.2], tail: [2.0, 2.4], fin: [1.6, 1.3], eye: 0.95,
+  },
+  {
+    id: 'basalt-sturgeon', name: '玄武岩鲟', trait: 'burning', zones: ['lava-corridor'], value: 870, hp: 42,
+    radius: 8.4, speed: 30, weight: 4,
+    desc: '身上覆着一层六棱的硬壳，像刚从冷却的岩流里爬出来。撞它一下你会更疼。',
+    color: 0x4a4048, belly: 0x7a6a72, spots: 0x2a2428, spikes: 20,
+    body: [8.4, 3.4, 2.4], tail: [3.0, 3.4], fin: [2.0, 1.6], eye: 0.8,
+  },
+  {
+    id: 'lava-oarfish', name: '熔流皇带', zones: ['lava-corridor'], value: 1180, hp: 34,
+    radius: 9.4, speed: 46, weight: 3,
+    desc: '一条被拉长的橙色带子，背鳍一直在抖。深海里的渔民管它叫"流火"。',
+    color: 0xe07030, belly: 0xffc080, emissive: 0xff7020, emissiveIntensity: 0.5,
+    crest: true, crestColor: 0xffd08a, stripe: 0x8a3a18, stripeN: 6,
+    body: [12.0, 1.9, 0.9], tail: [2.2, 1.8], fin: [1.2, 0.9], eye: 0.55,
+  },
+
+  // ── 黑曜深渊 Obsidian Abyss（1040 ~ 1600m）────────────────
+  {
+    id: 'ifrit-shark', name: '炎魔鲨', zones: ['lava-obsidian'], value: 1570, hp: 48,
+    radius: 9.0, speed: 50, weight: 5,
+    desc: '背鳍像一片烧黑的刀刃。它游过的地方，水会留下一条短暂的红。',
+    color: 0x3a2028, belly: 0x8a3a2a, emissive: 0xd83a1a, emissiveIntensity: 0.4,
+    fangs: 12, spikes: 14,
+    body: [8.6, 3.2, 2.2], tail: [3.4, 3.8], fin: [2.2, 1.7], eye: 0.85,
+  },
+  {
+    id: 'magma-heart-angler', name: '熔心鮟鱇', trait: 'burning', zones: ['lava-obsidian'], value: 1960, hp: 34,
+    radius: 7.6, speed: 24, weight: 4,
+    desc: '胸口的皮是透的，能看见里面那颗一跳一跳的东西。别盯着看太久。',
+    color: 0x4a2a2a, belly: 0x9a4a3a, emissive: 0xff4a1a, emissiveIntensity: 0.75,
+    lure: true, fangs: 11, bignose: 0.6,
+    body: [6.0, 4.4, 3.4], tail: [2.2, 2.6], fin: [1.7, 1.4], eye: 1.0,
+  },
+  {
+    id: 'mantle-ray', name: '地幔蝠鲼', trait: 'phantom', zones: ['lava-obsidian'], value: 2460, hp: 78,
+    radius: 11.0, speed: 34, weight: 3,
+    desc: '展开的双翼上有一层缓慢流动的纹路，像从很深的地方带上来的岩浆。',
+    color: 0x5a3040, belly: 0xb86a4a, emissive: 0xc04a1a, emissiveIntensity: 0.35,
+    wings: 10.5, spots: 0xff8a3a,
+    body: [7.0, 3.0, 4.4], tail: [4.2, 1.4], fin: [2.4, 1.8], eye: 0.7,
+  },
+  {
+    id: 'cinder-leviathan', name: '赤炎利维坦', zones: ['lava-obsidian'], value: 3220, hp: 90,
+    radius: 12.4, speed: 40, weight: 2,
+    desc: '浑身覆着一层还没凉透的壳，裂缝里透着橙。它转身的时候，整片水都亮一下。',
+    color: 0x6a2a1a, belly: 0xc06030, emissive: 0xff5a10, emissiveIntensity: 0.6,
+    glow: [14.0, 0xff7a30], wings: 9.8, spikes: 18,
+    body: [8.6, 3.6, 4.6], tail: [3.8, 4.4], fin: [2.8, 2.1], eye: 0.75,
+  },
+
+  // ── 地心之喉 Core Throat（1600 ~ 2200m）───────────────────
+  {
+    id: 'lava-king', name: '熔岩之王', zones: ['lava-throat'], value: 4060, hp: 130,
+    radius: 13.0, speed: 36, weight: 1.6,
+    desc: '王冠是凝固的岩浆做的，还是热的。它守在地心之喉，等着有人下来。',
+    color: 0x5a1e12, belly: 0xa8481e, emissive: 0xff6a20, emissiveIntensity: 0.7,
+    glow: [16.0, 0xff9040], crown: true, spots: 0xffa050, fangs: 10,
+    body: [9.6, 4.6, 3.4], tail: [3.6, 4.2], fin: [2.6, 2.0], eye: 1.0,
+  },
+
+  {
+    id: 'primordial-fire', name: '原初之火', bossWhen: { depth: 1300, caught: 4 }, zones: ['lava-throat'], value: 5320, hp: 320,
+    radius: 14.4, speed: 30, weight: 1.2,
+    // ⚠ 本图的 Boss：不参与稀有度抽签（它本身就已经是"稀有"了），
+    //   再叠一层金色描边会让"金色"这个信号失去意义。
+    elite: false, boss: true,
+    desc: '地心之喉底下那团东西。它没有形状，看起来像一段被固定住的火。',
+    color: 0x3a1208, belly: 0xd85a10, emissive: 0xff8a20, emissiveIntensity: 0.95,
+    glow: [19.0, 0xffb050], crown: true, spikes: 24, fangs: 12,
+    body: [10.4, 5.0, 3.8], tail: [4.0, 4.6], fin: [3.0, 2.3], eye: 1.1,
+  },
+
+  // ══════════════════ ④ 废弃沉船 WRECK（1800m）══════════════════
+  {
+    id: 'rust-sardine', name: '锈色沙丁', zones: ['wreck-deck'], value: 210, hp: 2,
+    radius: 3.4, speed: 50, weight: 26,
+    desc: '一群游过去像一把在水里散开的铁屑。它们是这片海里唯一还成群的东西。',
+    color: 0x8a7a4a, belly: 0xc9b98a, spots: 0x5a4a2a,
+    body: [5.1, 2.11, 1.22], tail: [1.43, 1.63], fin: [1.16, 0.88], eye: 0.55,
+  },
+
+  {
+    id: 'barnacle-crab', name: '藤壶蟹', zones: ['wreck-deck'], value: 280, hp: 4,
+    radius: 4.6, speed: 22, weight: 18,
+    desc: '壳上长满了藤壶，重得几乎走不动。它已经在这块甲板上待了很久。',
+    color: 0x9a9a8a, belly: 0xd8d8c8, spikes: 14, legs: 6, spots: 0x6a6a5a,
+    body: [6.9, 2.85, 1.66], tail: [1.93, 2.21], fin: [1.56, 1.2], eye: 0.7,
+  },
+
+  {
+    id: 'rope-eel', name: '缆绳鳗', zones: ['wreck-deck'], value: 350, hp: 5,
+    radius: 5.4, speed: 34, weight: 14,
+    desc: '乍一看就是一段泡烂的缆绳 —— 直到它开始动。',
+    color: 0x6a5a3a, belly: 0xa89060, stripe: 0x3a3020, stripeN: 4,
+    body: [8.1, 3.35, 1.94], tail: [2.27, 2.59], fin: [1.84, 1.4], eye: 0.85,
+  },
+
+  {
+    id: 'ghost-jelly', name: '幽灵水母', zones: ['wreck-deck'], value: 480, hp: 6,
+    radius: 5, speed: 14, weight: 12,
+    desc: '扣钱鱼。半透明的灰白色，从舷窗里飘出来的时候像一块抹布。打中它会炸开扣 30 金币。',
+    color: 0xd8e0d0, hazard: true, emissive: 0xa8c8a0, emissiveIntensity: 0.8, opacity: 0.6, legs: 6, spikes: 14, belly: 0xf0f8e8,
+    body: [7.5, 3.1, 1.8], tail: [2.1, 2.4], fin: [1.7, 1.3], eye: 0.55,
+  },
+
+  {
+    id: 'brass-fish', name: '黄铜鱼', zones: ['wreck-hold'], value: 620, hp: 9,
+    radius: 5.2, speed: 40, weight: 16,
+    desc: '鳞片是黄铜的，擦一擦还能反光。船上装的东西早就烂光了，只有它还亮着。',
+    color: 0xb08a3a, belly: 0xe8c878, spots: 0x7a5a20,
+    body: [7.8, 3.22, 1.87], tail: [2.18, 2.5], fin: [1.77, 1.35], eye: 0.7,
+  },
+
+  {
+    id: 'cargo-eel', name: '货舱鳗', zones: ['wreck-hold'], value: 810, hp: 14,
+    radius: 6.8, speed: 36, weight: 12,
+    desc: '从破掉的木箱里钻出来，身上还缠着一圈铁箍。',
+    color: 0x4a4030, belly: 0x8a7a50, emissive: 0x6a5a20, emissiveIntensity: 0.4, glow: [6.6, 0xa89040], fangs: 7,
+    body: [10.2, 4.22, 2.45], tail: [2.86, 3.26], fin: [2.31, 1.77], eye: 0.85,
+  },
+
+  {
+    id: 'splinter-ray', name: '木刺鳐', zones: ['wreck-hold'], value: 1050, hp: 20,
+    radius: 7.6, speed: 30, weight: 9,
+    desc: '双翼是两块断掉的船板，边缘全是木刺。贴着舱底滑过去的时候像一张翻倒的桌子。',
+    color: 0x5a4a34, belly: 0x9a8a68, wings: 8.4, spikes: 16,
+    body: [11.4, 4.71, 2.74], tail: [3.19, 3.65], fin: [2.58, 1.98], eye: 0.55,
+  },
+
+  {
+    id: 'decklamp-fish', name: '舷灯鱼', zones: ['wreck-hold'], value: 1240, hp: 12,
+    radius: 6, speed: 28, weight: 8,
+    desc: '额头上挂着一盏船上的舷灯，玻璃碎了，但还亮。',
+    color: 0x3a3a2a, belly: 0x7a7a5a, emissive: 0xffd06a, emissiveIntensity: 0.85, lure: true, fangs: 9, bignose: 0.5,
+    body: [9, 3.72, 2.16], tail: [2.52, 2.88], fin: [2.04, 1.56], eye: 0.7,
+  },
+
+  {
+    id: 'keel-shark', name: '龙骨鲨', zones: ['wreck-keel'], value: 1560, hp: 22,
+    radius: 9, speed: 48, weight: 7,
+    desc: '背鳍的形状和断裂的龙骨一模一样。它在这根龙骨旁边游了几十年。',
+    color: 0x3a4234, belly: 0x7a8468, fangs: 12, spikes: 14,
+    body: [13.5, 5.58, 3.24], tail: [3.78, 4.32], fin: [3.06, 2.34], eye: 0.85,
+  },
+
+  {
+    id: 'anchor-turtle', name: '锚龟', zones: ['wreck-keel'], value: 1900, hp: 34,
+    radius: 8.4, speed: 20, weight: 5,
+    desc: '壳上嵌着一只小铁锚。它拖着那只锚走了很久，已经长在一起了。',
+    color: 0x4a5240, belly: 0x8a9278, spots: 0x2a3020, spikes: 18, legs: 4,
+    body: [12.6, 5.21, 3.02], tail: [3.53, 4.03], fin: [2.86, 2.18], eye: 0.55,
+  },
+
+  {
+    id: 'mast-serpent', name: '桅杆蛇', zones: ['wreck-keel'], value: 2400, hp: 50,
+    radius: 10.2, speed: 32, weight: 4,
+    desc: '盘在一根折断的桅杆上，身体和桅杆分不清哪截是木哪截是它。',
+    color: 0x5a5a3a, belly: 0xa8a878, emissive: 0x8a8a40, emissiveIntensity: 0.35, stripe: 0x2a2a18, stripeN: 6,
+    body: [15.3, 6.32, 3.67], tail: [4.28, 4.9], fin: [3.47, 2.65], eye: 0.7,
+  },
+
+  {
+    id: 'drowned-captain', name: '溺亡船长', zones: ['wreck-keel'], value: 3100, hp: 30,
+    radius: 9.6, speed: 26, weight: 3,
+    desc: '还穿着那件制服，帽子也在。它没有眼睛，但它一直在看你。',
+    color: 0x2a3040, belly: 0x5a6478, emissive: 0x6a90c0, emissiveIntensity: 0.6, glow: [11.0, 0x8fb0d8], crown: true, fangs: 8,
+    body: [14.4, 5.95, 3.46], tail: [4.03, 4.61], fin: [3.26, 2.5], eye: 0.85,
+  },
+
+  {
+    id: 'rust-leviathan', name: '锈蚀利维坦', zones: ['wreck-ballast'], value: 3900, hp: 58,
+    radius: 11.4, speed: 38, weight: 4,
+    desc: '整条鱼像是用沉船的残骸焊起来的。它游过去的时候，铁皮互相摩擦。',
+    color: 0x4a4232, belly: 0x8a8060, emissive: 0x9a7a30, emissiveIntensity: 0.45, glow: [13.0, 0xc0a050], wings: 9.6, spikes: 18,
+    body: [17.1, 7.07, 4.1], tail: [4.79, 5.47], fin: [3.88, 2.96], eye: 0.55,
+  },
+
+  {
+    id: 'ballast-whale', name: '压舱鲸', zones: ['wreck-ballast'], value: 5200, hp: 96,
+    radius: 13, speed: 24, weight: 3,
+    desc: '它吞了一肚子的压舱石，游起来沉甸甸的。它不追你，它只是从你上面过去。',
+    color: 0x3a4436, belly: 0x7a8a68, spots: 0x1a2018, fangs: 10,
+    body: [19.5, 8.06, 4.68], tail: [5.46, 6.24], fin: [4.42, 3.38], eye: 0.7,
+  },
+
+  {
+    id: 'hull-eater', name: '噬船者', zones: ['wreck-ballast'], value: 6800, hp: 150,
+    radius: 12.2, speed: 30, weight: 3,
+    desc: '它啃穿了一整层船底。这艘船能留在这里，一半的原因是它已经吃饱了。',
+    color: 0x2a2a20, belly: 0x6a5a30, emissive: 0xff8a20, emissiveIntensity: 0.5, glow: [14.0, 0xff9a40], fangs: 14, spikes: 20,
+    body: [18.3, 7.56, 4.39], tail: [5.12, 5.86], fin: [4.15, 3.17], eye: 0.85,
+  },
+
+  {
+    id: 'ghost-galleon', name: '幽灵大帆船', zones: ['wreck-ballast'], value: 8200, hp: 72,
+    radius: 12.6, speed: 22, weight: 2,
+    desc: '整艘船的影子。它比那艘沉船大得多 —— 也就是说，底下还压着一艘更大的。',
+    color: 0x2a3a4a, belly: 0x5a7a8a, emissive: 0x8fd0e0, emissiveIntensity: 0.7, glow: [16.0, 0xa8e0f0], opacity: 0.7, wings: 11.0, crown: true,
+    body: [18.9, 7.81, 4.54], tail: [5.29, 6.05], fin: [4.28, 3.28], eye: 0.55,
+  },
+
+  {
+    id: 'wreck-king', name: '沉船之王', zones: ['wreck-core'], value: 11000, hp: 240,
+    radius: 14, speed: 34, weight: 2,
+    desc: '它戴着整艘船的船首像当王冠。没人知道它是先住进来的，还是本来就是这艘船的一部分。',
+    color: 0x1e2a1a, belly: 0x6a7a4a, emissive: 0xffd06a, emissiveIntensity: 0.75, glow: [18.0, 0xffe090], crown: true, spots: 0xd8e8a0, fangs: 12,
+    body: [21, 8.68, 5.04], tail: [5.88, 6.72], fin: [4.76, 3.64], eye: 0.7,
+  },
+
+  {
+    id: 'the-captain', name: '船长', zones: ['wreck-core'], value: 16200, hp: 620,
+    radius: 15.2, speed: 30, weight: 1.2,
+    desc: '它站在船骸最深处，背对着你。制服、帽子、肩章都在。它转过身的时候，你才明白这艘船为什么一直没沉下去。',
+    color: 0x14181f, belly: 0x3a4450, emissive: 0x8fb8ff, emissiveIntensity: 0.95, glow: [21.0, 0xa8d0ff], crown: true, spikes: 26, fangs: 14, elite: false, boss: true, bossWhen: { depth: 1700, caught: 5 },
+    body: [22.8, 9.42, 5.47], tail: [6.38, 7.3], fin: [5.17, 3.95], eye: 0.85,
+  },
+
+  // ══════════════════ ⑤ 深海之声 THE DEEP SONG（2200m）══════════════════
+  {
+    id: 'glimmer-anchovy', name: '微光鳀', zones: ['song-glow'], value: 380, hp: 2,
+    radius: 3.6, speed: 52, weight: 26,
+    desc: '鳞片上有一层极淡的磷光，一群游过去像水里的星空。',
+    color: 0x8fb4dc, belly: 0xe8f4ff, emissive: 0x6fa0d8, emissiveIntensity: 0.5, spots: 0xd8ecff,
+    body: [5.4, 2.23, 1.3], tail: [1.51, 1.73], fin: [1.22, 0.94], eye: 0.55,
+  },
+
+  {
+    id: 'echo-squid', name: '回响乌贼', zones: ['song-glow'], value: 520, hp: 4,
+    radius: 4.8, speed: 30, weight: 18,
+    desc: '喷出的墨在水里会短暂地发亮，像一句说完就散的话。',
+    color: 0x6a8ab8, belly: 0xa8c8e8, emissive: 0x8fc0ff, emissiveIntensity: 0.45, legs: 8, spots: 0xd8ecff,
+    body: [7.2, 2.98, 1.73], tail: [2.02, 2.3], fin: [1.63, 1.25], eye: 0.7,
+  },
+
+  {
+    id: 'hymn-fish', name: '圣歌鱼', zones: ['song-glow'], value: 700, hp: 5,
+    radius: 5.2, speed: 36, weight: 14,
+    desc: '它的鳔会共振 —— 你听不见，但水里那些磷光颗粒会跟着一起抖。',
+    color: 0xc8d8f0, belly: 0xffffff, emissive: 0x9fc8ff, emissiveIntensity: 0.6, stripe: 0x5a7aa8, stripeN: 3,
+    body: [7.8, 3.22, 1.87], tail: [2.18, 2.5], fin: [1.77, 1.35], eye: 0.85,
+  },
+
+  {
+    id: 'silent-jelly', name: '寂水母', zones: ['song-glow'], value: 900, hp: 6,
+    radius: 5.2, speed: 14, weight: 12,
+    desc: '扣钱鱼。它身上没有一点光，所以在这片会发光的海里反而最显眼。打中它会炸开扣 30 金币。',
+    color: 0x2a3444, hazard: true, opacity: 0.7, legs: 6, spikes: 14, belly: 0x4a5a70,
+    body: [7.8, 3.22, 1.87], tail: [2.18, 2.5], fin: [1.77, 1.35], eye: 0.55,
+  },
+
+  {
+    id: 'resonance-ray', name: '共振鳐', zones: ['song-echo'], value: 1150, hp: 9,
+    radius: 5.6, speed: 42, weight: 16,
+    desc: '双翼振动的时候会推开水里的颗粒，留下一圈一圈的纹。',
+    color: 0x4a6a9a, belly: 0x8fb4dc, wings: 7.2, spots: 0x9fc8ff,
+    body: [8.4, 3.47, 2.02], tail: [2.35, 2.69], fin: [1.9, 1.46], eye: 0.7,
+  },
+
+  {
+    id: 'chorus-eel', name: '合唱鳗', zones: ['song-echo'], value: 1500, hp: 14,
+    radius: 7.2, speed: 36, weight: 12,
+    desc: '一整个家族的鳗鱼会同时摆尾 —— 那一下水里会亮起一整排光点。',
+    color: 0x3a5578, belly: 0x7a9cc8, emissive: 0x6fa8e8, emissiveIntensity: 0.5, glow: [7.0, 0x8fc0ff], fangs: 8,
+    body: [10.8, 4.46, 2.59], tail: [3.02, 3.46], fin: [2.45, 1.87], eye: 0.85,
+  },
+
+  {
+    id: 'lullaby-turtle', name: '摇篮龟', zones: ['song-echo'], value: 1900, hp: 20,
+    radius: 8, speed: 20, weight: 9,
+    desc: '它游得极慢，慢到你会以为它在漂。据说看着它游会想睡觉。',
+    color: 0x46688a, belly: 0x8fb4c8, spots: 0x2a4058, spikes: 18, legs: 4,
+    body: [12, 4.96, 2.88], tail: [3.36, 3.84], fin: [2.72, 2.08], eye: 0.55,
+  },
+
+  {
+    id: 'deep-horn', name: '深角鱼', zones: ['song-echo'], value: 2300, hp: 12,
+    radius: 6.4, speed: 28, weight: 8,
+    desc: '额前的角是中空的，水流过去会响。它是这张图唯一会"发声"的鱼。',
+    color: 0x2e4468, belly: 0x6a88b0, emissive: 0x8fc8ff, emissiveIntensity: 0.7, lure: true, fangs: 9, bignose: 0.55,
+    body: [9.6, 3.97, 2.3], tail: [2.69, 3.07], fin: [2.18, 1.66], eye: 0.7,
+  },
+
+  {
+    id: 'bass-whale', name: '低音鲸', zones: ['song-bass'], value: 2900, hp: 22,
+    radius: 9.6, speed: 44, weight: 7,
+    desc: '它的叫声很低，低到传得比任何东西都远。整片海都在替它传话。',
+    color: 0x2a3f66, belly: 0x6a88b0, fangs: 12, spots: 0x16263f,
+    body: [14.4, 5.95, 3.46], tail: [4.03, 4.61], fin: [3.26, 2.5], eye: 0.85,
+  },
+
+  {
+    id: 'chord-serpent', name: '和弦蛇', zones: ['song-bass'], value: 3600, hp: 34,
+    radius: 9, speed: 22, weight: 5,
+    desc: '身上有七道发光的环，一道比一道亮。没人知道那代表什么。',
+    color: 0x3a4a6a, belly: 0x8fa8c8, emissive: 0x9fc8ff, emissiveIntensity: 0.5, stripe: 0xd8ecff, stripeN: 7, spikes: 16,
+    body: [13.5, 5.58, 3.24], tail: [3.78, 4.32], fin: [3.06, 2.34], eye: 0.55,
+  },
+
+  {
+    id: 'organ-fish', name: '风琴鱼', zones: ['song-bass'], value: 4600, hp: 50,
+    radius: 10.6, speed: 30, weight: 4,
+    desc: '侧线是一排排竖着的鳃裂，水流过它们的时候会分出高低音。',
+    color: 0x2e3a52, belly: 0x7a8ca8, emissive: 0x7fb0e8, emissiveIntensity: 0.4, stripe: 0x1a2438, stripeN: 9,
+    body: [15.9, 6.57, 3.82], tail: [4.45, 5.09], fin: [3.6, 2.76], eye: 0.7,
+  },
+
+  {
+    id: 'crescendo-shark', name: '渐强鲨', zones: ['song-bass'], value: 5800, hp: 30,
+    radius: 10, speed: 26, weight: 3,
+    desc: '它出现的时候，整片海的声音会越来越大 —— 直到你看见它。',
+    color: 0x1e2a40, belly: 0x5a7090, emissive: 0x6fa8e8, emissiveIntensity: 0.55, glow: [12.0, 0x8fc0ff], crown: true, fangs: 12,
+    body: [15, 6.2, 3.6], tail: [4.2, 4.8], fin: [3.4, 2.6], eye: 0.85,
+  },
+
+  {
+    id: 'sonata-leviathan', name: '奏鸣利维坦', zones: ['song-mute'], value: 7400, hp: 58,
+    radius: 12, speed: 40, weight: 4,
+    desc: '它游过去的时候，水里的磷光会排成一段一段的线 —— 像五线谱。',
+    color: 0x22304a, belly: 0x6a80a0, emissive: 0x9fd0ff, emissiveIntensity: 0.5, glow: [14.0, 0xb0d8ff], wings: 10.4, spikes: 18,
+    body: [18, 7.44, 4.32], tail: [5.04, 5.76], fin: [4.08, 3.12], eye: 0.55,
+  },
+
+  {
+    id: 'mute-angler', name: '无声鮟鱇', zones: ['song-mute'], value: 9600, hp: 96,
+    radius: 13.6, speed: 24, weight: 3,
+    desc: '它的灯不亮。它是这张图里唯一一盏关着的灯 —— 所以它才是最危险的。',
+    color: 0x141c2c, belly: 0x3a4a64, emissive: 0x2a3a52, emissiveIntensity: 0.3, fangs: 14, bignose: 0.7,
+    body: [20.4, 8.43, 4.9], tail: [5.71, 6.53], fin: [4.62, 3.54], eye: 0.7,
+  },
+
+  {
+    id: 'requiem-ray', name: '安魂鳐', zones: ['song-mute'], value: 12000, hp: 150,
+    radius: 13.2, speed: 32, weight: 3,
+    desc: '巨大的、几乎透明的影子。它从你上面过去的时候，你会有几秒钟听不见任何声音。',
+    color: 0x1a2438, belly: 0x4a6080, emissive: 0x8fb8e8, emissiveIntensity: 0.6, glow: [17.0, 0xa8d0ff], opacity: 0.72, wings: 12.0, crown: true,
+    body: [19.8, 8.18, 4.75], tail: [5.54, 6.34], fin: [4.49, 3.43], eye: 0.85,
+  },
+
+  {
+    id: 'finale-whale', name: '终曲鲸', zones: ['song-mute'], value: 15000, hp: 72,
+    radius: 13, speed: 20, weight: 2,
+    desc: '它一辈子只唱一次。唱完之后就不再出声了 —— 所以这片海才这么安静。',
+    color: 0x101828, belly: 0x3a4a68, emissive: 0xffe0a0, emissiveIntensity: 0.55, glow: [16.0, 0xfff0c0], crown: true, spots: 0xd8e8ff,
+    body: [19.5, 8.06, 4.68], tail: [5.46, 6.24], fin: [4.42, 3.38], eye: 0.55,
+  },
+
+  {
+    id: 'siren-queen', name: '海妖女王', zones: ['song-source'], value: 30000, hp: 400,
+    radius: 16, speed: 34, weight: 1.4,
+    desc: '她坐在声源上。她唱的东西没有词，但你听得懂 —— 那才是最糟糕的部分。',
+    color: 0x0c1220, belly: 0x3a4a70, emissive: 0xffd0e0, emissiveIntensity: 0.85, glow: [22.0, 0xffe0f0], crown: true, spikes: 26, fangs: 14, elite: false, boss: true, bossWhen: { depth: 2080, caught: 6 },
+    body: [24, 9.92, 5.76], tail: [6.72, 7.68], fin: [5.44, 4.16], eye: 0.7,
+  },
+
+  {
+    id: 'genesis-voice', name: '创世之音', zones: ['song-source'], value: 45000, hp: 980,
+    radius: 17, speed: 26, weight: 1,
+    desc: '直径四十米。它已经在这里播了三十年，循环播放同一首广告歌。它没有嘴，但它一直在唱。',
+    color: 0x0a0e16, belly: 0x2a3446, emissive: 0xffd06a, emissiveIntensity: 0.95, glow: [25.0, 0xffe090], crown: true, spikes: 28, fangs: 14, elite: false, boss: true, final: true, bossWhen: { depth: 2140, caught: 8, afterBoss: 3 },
+    body: [25.5, 10.54, 6.12], tail: [7.14, 8.16], fin: [5.78, 4.42], eye: 0.85,
   },
 ];
 
@@ -861,6 +1619,21 @@ export const UPGRADES = {
     key: 'bait', name: '鱼饵', icon: 'bait', base: 740, tier: '进阶', unlockMap: 'polar',
     desc: '高价鱼概率', unit: '%',
   },
+  // 耐压舱（批 4，第 8 项）：延长**空中阶段**的滞空时长。
+  //
+  // 为什么是"滞空"：空中阶段是这个游戏的高潮（鱼飞上天、几秒钟内决定打哪条），
+  // 而它现在是一条**写死的常量** `TUNING.airTimeout = 26s` —— 玩家对高潮的长度
+  // 没有任何投资空间。这一项把那段控制权交还给玩家。
+  //
+  // ⚠ 它直接抬高**输出上限**（`docs/06` §4.2 的余量表就是按 26s 算的），
+  //   所以改它的曲线之后**必须跑 `node .dev/gen-docs.mjs` 重算那张表**。
+  //   Lv0 = 26 与原常量一致 —— 没买过的玩家手感和以前完全一样（不会打破老存档的平衡）。
+  //
+  // ⚠ 挂在**熔岩海沟**（第 3 张图）解锁：它是进阶层，价格明显高于 creel / bait。
+  tank: {
+    key: 'tank', name: '耐压舱', icon: 'tank', base: 1200, tier: '进阶', unlockMap: 'lava',
+    desc: '滞空时长', unit: 's',
+  },
   // 绞盘（v0.5 重做）：一次性买断的工具。买下之后上升阶段多一个「快速回收」按钮。
   //
   // ⚠ v0.7：`unlockMap: 'polar'` —— 拿到「冰封极地」许可证之后才出现在商店里。
@@ -880,7 +1653,7 @@ export const UPGRADES = {
 // 商店里的显示顺序：基础 → 进阶 → 工具（和上面的定义顺序一致，显式写出来防止以后重排）
 export const UPGRADE_ORDER = [
   'line', 'hook', 'sinker', 'lamp',
-  'creel', 'bait',
+  'creel', 'bait', 'tank',
   'winch',
 ];
 
@@ -906,28 +1679,32 @@ export const upgradeCost = (key, level) =>
   level >= maxLvOf(key) ? Infinity : Math.round(UPGRADES[key].base * Math.pow(GROWTH, level));
 
 /**
- * 每张地图开放的等级上限（累计值）。
- *   第 1 张图最多 Lv5，第 2 张 Lv9，第 3 张 Lv13，第 4 张 Lv17，第 5 张 Lv20。
+ * 每张地图开放到第几级 —— 这是**换图的进度闸门**，也是「同一棵树 + 分段封顶」的落点。
  *
- * 为什么用「同一棵树 + 分段封顶」而不是「每张图一套独立升级树」：
- * 独立树会让玩家换图后之前的投入全部作废；分段封顶则投入全部有效，只是"暂时买不动了"。
- * 副作用是每张图的"毕业"信号非常明确 —— 升级按钮全部变灰，这就是"该换图了"。
- */
-/**
- * 每张地图开放到第几级 —— 这是**换图的进度闸门**。
+ * 为什么不用「每张图一套独立升级树」：独立树会让玩家换图后之前的投入全部作废；
+ * 分段封顶则投入全部有效，只是"暂时买不动了"。副作用是每张图的"毕业"信号非常明确 ——
+ * 升级按钮全部变灰，这就是"该换图了"。
  *
  * 数值不是随便定的：`LEVELS.maxDepth` 在每个节点上正好等于该地图的深度上限，
  * 所以"买满本图的等级"= "刚好能潜到本图的底"，玩家自然会想换一片更深的海。
  *
  *   Lv5  → maxDepth 860  = 宁静海湾的上限 ✓
  *   Lv9  → maxDepth 1240 = 冰封极地的上限 ✓
- *   Lv13 → maxDepth 1560 = 熔岩海沟 ✓
- *   Lv17 → maxDepth 1800 = 废弃沉船 ✓
- *   Lv20 → maxDepth 2200 = 深海之声 ✓
+ *   Lv13 → maxDepth 1560 = 熔岩海沟的上限 ✓
  *
- * ⚠ 改 LEVELS.maxDepth 的时候必须回头核对这张表 —— 两边错开一级，
+ * ⚠⚠ **v0.8（批 4）改过一版，又被 `pace.mjs` 打回来了 —— 这段是那次返工的记录。**
+ *   第一版为了"3 张图吃满 Lv0~20"写成了 `[5, 9, 20]`（第 3 张图 2200m）。
+ *   跑 `pace.mjs` 的结果是 **合计 2,798 竿 ≈ 54.4 h**，熔岩海沟的**竿/级 = 32.16**
+ *   （前两张是 0.35 / 0.66）—— 因为一段 11 级 × `GROWTH 1.62` = 成本涨 **183 倍**，
+ *   而一竿收入只涨 2.8 倍/图。**每段只能装 ~4 级**，这是 `GROWTH` 决定的硬约束。
+ *   所以退回 `[5, 9, 13]`：第 3 张图 1560m，**和原 5 图计划的前三段完全一致**。
+ *
+ * ⚠ Lv14~20 与 Lv17 / Lv20 那两个锚点（1800 / 2200m）**暂时用不到，不要删** ——
+ *   它们是留给"更远期"的第 4~5 张图的（见 EXPANSION.md §2.6）。
+ *
+ * ⚠ 改 `LEVELS.maxDepth` 的时候必须回头核对这张表 —— 两边错开一级，
  *   玩家就会卡在"买满了却潜不到底"或者"还没买满就到底了"。
- *   verify7 的 A8 / verify8 会断言这个对应关系。
+ *   `.dev/pace.mjs` 的 `assertLevelAnchors()` 会把它钉死（对不上直接挂）。
  */
 export const MAP_LEVEL_CAP = [5, 9, 13, 17, 20];
 
@@ -969,6 +1746,11 @@ export const LEVELS = {
   lampPower:  [0.10, 0.30, 0.48, 0.66, 0.84, 0.85, 0.85, 0.86, 0.87, 0.88, 0.89, 0.89, 0.90, 0.91, 0.91, 0.92, 0.93, 0.94, 0.94, 0.95, 0.95], // 0~1 — 灯具
   creelLimit: [8, 11, 13, 16, 18, 21, 24, 26, 29, 31, 34, 37, 39, 42, 44, 47, 50, 52, 55, 57, 60],                         // 条 — 鱼护
   bait:       [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100],                        // % — 鱼饵（高价鱼权重加成）
+  // 耐压舱（批 4，第 8 条曲线）：空中阶段的**滞空时长**（秒）。
+  // ⚠ Lv0 = 26 = 原来的 `TUNING.airTimeout` 常量，所以**没买过的玩家手感一分不变**
+  //   （老存档读进来就是 Lv0，不会因为加了这一项而突然变强或变弱）。
+  // 整数步长是刻意的：商店那一行只分到 180px，`26 → 27s` 比 `26 → 26.8s` 短一截。
+  tank:       [26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46],                          // s — 耐压舱（滞空时长）
 };
 
 /**
@@ -1153,6 +1935,20 @@ export const GUNS = [
     rampMax: 4.0,                                  // 递增上限（×5 封顶）
   },
   {
+    id: 'grenade', name: '榴弹枪', en: 'GRENADE', icon: 'gun-grenade',
+    mech: 'lob', tier: '重型', price: 52000, upBase: 26000,
+    unlockMap: 'lava',
+    desc: '延迟 · 大范围',
+    tip: '打出去 0.55 秒后才炸，范围仅次于巴雷特。鱼飞走了就炸空 —— 得学会打提前量。',
+    dmg: [7, 14, 27, 49, 84, 140],
+    rad: [54, 58, 62, 68, 74, 82],
+    cd:  [0.95, 0.92, 0.89, 0.85, 0.81, 0.74],
+    mag: null, reload: null,
+    // ⚠ 这一条是它和另外七把枪的**唯一机制差异**：开火不立刻结算，
+    //   而是往世界层挂一颗"到点才炸"的弹。见 game.js 的 `_shootLob()`。
+    fuse: 0.55,
+  },
+  {
     id: 'barrett', name: '巴雷特', en: 'BARRETT', icon: 'gun-barrett',
     mech: 'single', tier: '重型', price: 60000, upBase: 30000,
     unlockMap: 'polar', unlockDepth: 1100,
@@ -1212,6 +2008,11 @@ export function gunStats(id, lv) {
     ramp: g.ramp ? g.ramp[i] : 0,
     rampMax: g.rampMax || 0,
     spinup: g.spinup || 0,
+    // ⚠⚠ 榴弹枪（批 4）的引信**必须带出来** —— `_shootLob()` 读的是 `s.fuse`。
+    //   漏掉它的症状极其阴险：`t = undefined` → `t -= dt` 得到 NaN →
+    //   `if (b.t > 0) continue` 对 NaN **为假** → 那一枪在**同一帧就炸**，
+    //   "延迟爆炸"退化成了普通爆炸，不报错、不闪退，只是机制没了。
+    fuse: g.fuse || 0,
   };
 }
 
@@ -1246,7 +2047,7 @@ export function gunStats(id, lv) {
 //               codex  —— 图鉴已解锁种数 ≥ N
 //               level  —— { 升级项 key: 等级 }，逐项都要 ≥
 //               map    —— 该地图的许可证已买下（= 去过）
-//               chart  —— 已钓到海图（true / false 都可用：false = "还没钓到"）
+//               chart  —— 已钓到**哪张**海图（填海图 id，如 'polar'；见 CHARTS）
 //               boat   —— 是否已拥有船（同上，正反两向都支持）
 //               appLocked —— ['appId']：该 App **还没解锁**时才响
 //                            （用于"先钓到海图就不要再打船厂推荐电话"这种互斥，见 boat-intro）
@@ -1372,7 +2173,7 @@ export const CALLS = [
     who: '码头管理员 · 老陈',
     icon: 'route',
     // 钓到海图、但还没船 → 告诉他"能去，但得先有条船"
-    when: { chart: true, boat: false },
+    when: { chart: 'polar', boat: false },
     lines: [
       '你从海沟里钓上来的那张，是极地的海图。',
       '海图是通行证 —— 但你现在这条舢板开不过去。冰海不是它该待的地方。',
@@ -1387,7 +2188,7 @@ export const CALLS = [
     who: '码头管理员 · 老陈',
     icon: 'route',
     // 钓到海图**而且已经有船** → 直接把他送去航线（需求："直接告知并引导其前往新地图"）
-    when: { chart: true, boat: true },
+    when: { chart: 'polar', boat: true },
     lines: [
       '海图在你手上，船也备好了 —— 那就没什么好等的了。',
       '打开手机里的「航线」，极地那一片已经对你开了。',
@@ -1414,6 +2215,20 @@ export const DEEP = {
   rockCount: 30,       // 岩石数量
   relicCount: 9,       // 神秘发光体数量
 };
+
+// ───────────────────────── 特效预算 ─────────────────────────
+/**
+ * 全局粒子上限：所有粒子池（金币 / 气泡 / 火花 / 碎块）共用一个计数器。
+ * 特效是**装饰** —— 宁可少放一个，也不能让帧率掉下去。
+ * 无头 Chrome 是软件渲染（--use-angle=swiftshader），软渲染下跑不动就说明特效太重。
+ *
+ * ⚠ 这个数字必须留在 `config.js`，不能挪回 `world.js`：
+ *   `verify13` 的 C1 要验「真的不超过上限」，而 `world.js` 引了 `three`，
+ *   Node 里解析不了（见 `.dev/verify13.mjs` 头部）。数字一旦留在 `world.js`，
+ *   测试就只能自己写死一个字面量 —— **断言会退化成「在验自己」**，
+ *   这正是 P2-2 记录的那个坑。
+ */
+export const MAX_PARTICLES = 400;
 
 // ───────────────────────── 玩法手感参数 ─────────────────────────
 export const TUNING = {
@@ -1527,7 +2342,9 @@ export const TUNING = {
   // ⚠ v0.5：「保险」被移除，罚款不再有减免路径 —— 撞上就是全价。
   //   这条是刻意的：扣钱鱼是纯风险，不该能用金币把它变成"几乎无感"。
   pufferPenalty: 30,
-  birdBonus: 60,
+  // ⚠ 原来这里有个 `birdBonus: 60`（每只海鸟固定 60 金币）。
+  //   v0.8 起天空目标有自己的表（见下面的 `SKY`）—— **每张地图的血量与身价都不同**，
+  //   和鱼一样按「越后的图越硬越值钱」排。
 
   // 空中：价格越高 → 飞得越高 / 越远 / 越久
   //   最高点 = v0² / (2|g|)，v0 = launchBase + √value × launchPerSqrtValue
@@ -1541,7 +2358,12 @@ export const TUNING = {
   // 这样滞空久的鱼不会因为速度一样而飘到天边去。
   launchDriftBase: 180,
   launchDriftPerSqrt: 24,
-  airTimeout: 26,
+  // 空中阶段的**硬顶**（秒）：超过这个时长就强制结算（"鱼还在天上但玩家打不完"的兜底）。
+  //
+  // ⚠ v0.8（批 4）：从常量 26 改成**按「耐压舱」等级取值** —— 它是第 8 项升级，
+  //   玩家可以对"高潮有多长"投资了。`tank` 的 Lv0 就是 26，所以没买过的人手感一分不变。
+  //   调用方一律走 `this.airTimeout`（在 applyUpgrades 里落好），不要在循环里现查表。
+  airTimeout: (lv) => lvAt('tank', lv),
   // 中弹未死：血厚的鱼每次没被打死就再往天上顶一段（需求④）。
   // 一次没死 = 一次额外的滞空，所以血越厚飞得越久、越容易被连击。
   knockUpBase: 148,          // 基础再升空初速
@@ -1560,6 +2382,13 @@ export const TUNING = {
                          //   清空那一刻把画面定格（否则镜头还在飘，感觉不到"停"）
   slowmoScale: 0.28,
   slowmoTime: 0.22,
+  // ── 命中定格（批 6 特效 #1）──
+  // 命中瞬间把 dt 压到这个倍率，持续一小段（时长按鱼的血量给，见 game 的 _hitStop）。
+  // ⚠ 它只压 ，**不暂停渲染** —— 画面还在画，只是世界走得慢。
+  //   这是"打击感"的第一来源，成本低到只是一个乘数（EXPANSION §8.2 第一梯队）。
+  hitStopScale: 0.05,
+  hitStopMin: 0.04,
+  hitStopMax: 0.12,
 
   // 空中相机：锁定**最低的那条非扣钱鱼**，把它放在画面中间并推近。
   //
@@ -1574,6 +2403,70 @@ export const TUNING = {
   airCamRate: 9,            // v0.3.1：5.5 时跟得有点"黏"（换目标要 0.5s 才追上），提到 9
 
   shakeDecay: 5.5,
+};
+
+// ───────────────────────── 天空目标（v0.8）─────────────────────────
+/**
+ * 射击阶段**天上飞的东西**：海鸟 / 飞机 / UFO。
+ *
+ * 玩法定位：它们是「天上那半场」的加分项 —— 和鱼走**同一套手感**
+ * （中弹会翻滚、镜头会咬住它、血光打光就见钱），但**不参与结算判定**：
+ * 天上还有东西时照样能收竿（历史上这里被飞鸟卡过，见上面 `airSettleGrace` 的注释）。
+ *
+ * 规则：
+ *   · **不同高度刷新** —— `alt` 是「相对相机视野的比例」，鸟贴低空、飞机在中层、UFO 最高。
+ *     相机爬到 `maxCamY` 以上就不再刷这一种（"飞进太空就没有鸟了"）。
+ *   · **每张地图的血量与身价都不同** —— `hp` / `value` 是按 `MAPS` 顺序排的数组，
+ *     和 `SPECIES[].hp` / `value` 同一个思路。数组短了就用最后一项兜底（加图不必回来补）。
+ *   · 中弹后**和鱼一样翻滚**、镜头会切过去咬住它，打光才掉钱（见 `game.js::_applySkyDamage`）。
+ *
+ * 字段：
+ *   kind      造型名（`fish.js` 的 `SKY_MODELS` 按它取模型）
+ *   alt       刷新高度区间（相对相机视野的 0~1，越大越高）
+ *   speed     水平速度区间（设计稿单位/秒，进游戏时乘 MODEL_SCALE）
+ *   radius    判定半径（设计稿尺寸，进游戏时乘 MODEL_SCALE）—— 「打不打得中」看它
+ *   scale     视觉整体缩放
+ *   weight    抽签权重（同一时刻最多 `SKY_MAX_ALIVE` 个在场）
+ *   maxCamY   相机高于这个高度就不再刷这一种
+ */
+export const SKY = [
+  {
+    kind: 'bird', name: '海鸟',
+    hp: [2, 3, 4, 5, 6],
+    value: [60, 140, 320, 700, 1500],
+    alt: [0.14, 0.38], speed: [46, 86], radius: 8, scale: 1, weight: 6, maxCamY: 620,
+  },
+  {
+    kind: 'plane', name: '飞机',
+    hp: [8, 12, 17, 23, 30],
+    value: [260, 620, 1400, 3000, 6200],
+    alt: [0.44, 0.66], speed: [64, 104], radius: 11, scale: 1, weight: 3, maxCamY: 2600,
+  },
+  {
+    kind: 'ufo', name: 'UFO',
+    hp: [18, 26, 36, 48, 62],
+    value: [800, 1800, 4000, 8600, 18000],
+    alt: [0.70, 0.92], speed: [30, 58], radius: 10, scale: 1, weight: 2, maxCamY: Infinity,
+  },
+];
+
+/** 同一时刻最多几个天空目标在场（多了一来打不完、二来画面乱） */
+export const SKY_MAX_ALIVE = 3;
+
+/** 两次刷新之间的间隔区间（秒） */
+export const SKY_GAP = [1.6, 4.2];
+
+// ───────────────────────── 状态机 ─────────────────────────
+/**
+ * 玩法主状态。**唯一真相是 `game.state` 这个字符串**，界面覆盖层不算状态
+ * （手机开着时世界照常在 IDLE 跑，只多一个 `phoneOpen` 开关）。
+ *
+ * ⚠ 2026-09-20 从 `game.js` 挪到这里：① 其余常量全在 `config.js`（评审 P2-4）；
+ *   ② `narrative.js` 也要判 `STATE.IDLE`，而它不能 import `game.js`（会成环）。
+ */
+export const STATE = {
+  TITLE: 'title', IDLE: 'idle', DESCEND: 'descend',
+  ASCEND: 'ascend', AIR: 'air', RESULT: 'result',
 };
 
 // ───────────────────────── 存档 ─────────────────────────

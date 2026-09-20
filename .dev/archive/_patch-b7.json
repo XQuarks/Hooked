@@ -1,0 +1,29 @@
+{
+  "fields": [
+    ["silver-cod", "behavior", "'hunt'"],
+    ["narwhal-calf", "behavior", "'flee'"],
+    ["ice-crystal", "behavior", "'ambush'"],
+    ["ice-eel", "behavior", "'dash'"],
+    ["ice-eel", "trait", "'frozen'"],
+    ["frozen-ghost", "trait", "'frozen'"],
+    ["frost-throat", "behavior", "'hunt'"],
+    ["frost-throat", "trait", "'frozen'"],
+
+    ["magma-shrimp", "behavior", "'dash'"],
+    ["soot-jack", "behavior", "'hunt'"],
+    ["magma-squid", "behavior", "'flee'"],
+    ["core-lantern", "behavior", "'ambush'"],
+    ["blaze-sword", "trait", "'charged'"],
+    ["basalt-sturgeon", "trait", "'burning'"],
+    ["magma-heart-angler", "trait", "'burning'"],
+    ["mantle-ray", "trait", "'phantom'"],
+
+    ["polar-night-king", "bossWhen", "{ depth: 900, caught: 4 }"],
+    ["primordial-fire", "bossWhen", "{ depth: 1300, caught: 4 }"]
+  ],
+  "insertAfter": {
+    "anchor": "id: 'sulfur-puffer', name: '硫磺河豚'",
+    "end": "  },\n",
+    "text": "  {\n    id: 'mimic-puffer', name: '假河豚', zones: ['lava-shelf'], value: 260, hp: 4,\n    radius: 4.6, speed: 34, weight: 5,\n    // ⚠ 拟态（`behavior: 'dash'`）：**外形参数刻意和硫磺河豚一模一样**，\n    //   只有身价（61 → 260）和行为模式不同。设计意图是打破\"看到河豚就躲\"的条件反射 ——\n    //   真河豚是 `ambush`（静止不动等你靠近），假河豚是 `dash`（有节奏地一顿一顿游），\n    //   所以**细心玩家有一条线索**，而不是纯粹靠运气。\n    behavior: 'dash',\n    desc: '长得和硫磺河豚一模一样，但它是能吃的。别急着躲。',\n    color: 0xc8c02a, spots: 0x6a5a10, spikes: 14, belly: 0xf0ec8a,\n    body: [3.6, 3.2, 3.0], tail: [1.4, 2.0], fin: [1.2, 1.0], eye: 0.85,\n  },\n"
+  }
+}

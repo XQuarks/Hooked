@@ -10,9 +10,11 @@
  */
 import { UPGRADES, UPGRADE_ORDER, MAX_LEVEL, maxLvOf, upgradeCost, upgradeValueText,
   levelCapForMap, MAPS, DEFAULT_MAP, mapById, mapMaxDepth, mapOfSpecies,
-  zonesOfMap, GUNS, GUN_MAX_LEVEL, gunById, CALLS } from './config.js';
+  zonesOfMap, GUN_MAX_LEVEL, gunById, CALLS } from './config.js';
 import { codexOrder, zoneLabel, groupByMap, drawFishIcon } from './codex.js';
-import { coinIcon, glyph, iconText, heartRow, GLYPH } from './icons.js';
+import { coinIcon, glyph, iconText, GLYPH } from './icons.js';
+// 剧情数据表（批 5）—— 文案全在 story.js，界面只负责渲染
+import { SENDERS, RADIO } from './story.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
@@ -105,6 +107,21 @@ export class UI {
       // 左下角手机的红点（有未读新枪 / 有没接的来电）
       phoneDot: $('phoneDot'),
       hint: $('hint'),
+      // 屏幕闪白（批 7，串上带电鱼时用）
+      screenFlash: $('screenFlash'),
+      // 批 6 特效的三个覆盖层
+      vignette: $('vignette'),
+      comboFx: $('comboFx'),
+      bossShift: $('bossShift'),
+      // 过场卡（批 5）
+      cutscene: $('cutscene'),
+      cutText: $('cutText'),
+      cutHint: $('cutHint'),
+      // Boss 血条（批 7）
+      bossBar: $('bossBar'),
+      bossName: $('bossName'),
+      bossTrack: $('bossTrack'),
+      bossFill: $('bossFill'),
       overlay: $('overlay'),
       // 枪械条（空中阶段）
       gunBar: $('gunBar'),
@@ -366,6 +383,9 @@ export class UI {
     } else {
       this.el.comboBox.classList.remove('on');
     }
+    // 连击色差（批 6 特效 #4）：搭在已有的 setCombo 上，不另起一条调用链 ——
+    // 连击数只有这一个来源，多一条链就会有两处不同步的风险。
+    this.setComboFx(count);
   }
 
   // ── 收线按钮 / 手机入口 / 提示 ────────────────────────────
@@ -532,6 +552,148 @@ export class UI {
     this.el.hint.classList.add('on');
   }
 
+  /**
+   * 屏幕短促闪白（批 7）—— 串上「带电」鱼时用。
+   *
+   * ⚠ **不要用 `setTimeout` 去摘 class**：那会留下一个"如果这一帧正好在换图 /
+   *   重置就被吞掉"的 timer。这里靠 **transition 自己走完**（见 styles.css 的
+   *   `.screen-flash`）：加 `.on` 之后浏览器把 opacity 推到 0.55，
+   *   下一次 `requestAnimationFrame` 再摘掉，它就自己淡回去。
+   *   两帧足够 —— 闪白本来就只有 100ms 量级。
+   */
+  flashScreen() {
+    const el = this.el.screenFlash;
+    if (!el) return;
+    el.classList.add('on');
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('on')));
+  }
+
+  /**
+   * Boss 血条（批 7）。`name = null` 表示"收起来"。
+   *
+   * ⚠ **分段刻度只在段数变化时重建 DOM**：血条每中一枪都会调一次（每秒十几次），
+   *   每次都重建 innerHTML 会让刻度线闪、也会白烧 DOM 操作。
+   *   填充宽度走 CSS `transition`，所以每帧改 width 是平滑的、不需要 JS 补间。
+   */
+  setBossBar(name, ratio, segments) {
+    const el = this.el.bossBar;
+    if (!el) return;
+    if (!name) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    this.el.bossName.textContent = name;
+    if (this._bossSeg !== segments) {
+      this._bossSeg = segments;
+      let html = '';
+      for (let i = 1; i < segments; i++) {
+        html += `<i style="left:${((i / segments) * 100).toFixed(2)}%"></i>`;
+      }
+      this.el.bossTrack.innerHTML = html + '<div class="boss-fill" id="bossFill"></div>';
+      // ⚠ innerHTML 会把填充条一起冲掉，所以上面把它拼回去了 ——
+      //   但那样拿到的就是**新元素**，缓存必须重取，否则后面改的是个孤儿节点。
+      this.el.bossFill = $('bossFill');
+    }
+    if (this.el.bossFill) {
+      this.el.bossFill.style.width = (Math.max(0, Math.min(1, ratio)) * 100).toFixed(1) + '%';
+    }
+  }
+
+  // ── 批 6 特效的四个 UI 侧接口 ─────────────────────────────
+  /**
+   * 深度氛围 vignette（特效 #11）：越深越重。
+   *
+   * ⚠ 走 CSS 覆盖层 + ，**不引入后处理管线** ——
+   *   这个项目是纯静态零构建 + 软渲染无头 Chrome，EffectComposer 那一套跑不动。
+   * ⚠ 和已有的"暗幕"（，由灯具决定）是**两件事**：
+   *   暗幕是"看不看得见"（玩法），vignette 是"压迫感"（氛围）。两者叠加不冲突。
+   */
+  setVignette(depth01) {
+    const el = this.el.vignette;
+    if (!el) return;
+    const v = Math.max(0, Math.min(1, depth01 || 0));
+    el.style.opacity = (v * 0.72).toFixed(3);
+  }
+
+  /** 连击色差（特效 #4）：连击越高边缘 RGB 分离越明显 */
+  setComboFx(combo) {
+    const el = this.el.comboFx;
+    if (!el) return;
+    // 阈值 10：低于它完全不显示 —— 否则普通的一竿从头到尾都在闪，很快就麻木了
+    const v = combo >= 10 ? Math.min(1, (combo - 10) / 20 + 0.35) : 0;
+    el.style.opacity = v.toFixed(3);
+  }
+
+  /** Boss 色偏（特效 #10）：Boss 在场时整个画面偏红 */
+  setBossShift(on) {
+    const el = this.el.bossShift;
+    if (el) el.style.opacity = on ? '1' : '0';
+  }
+
+  /**
+   * 金币数字飘字（特效 #3）：上浮 + 放大 1.4× + 淡出。
+   *
+   * ⚠ 它和普通飘字（）的区别是**要有"数字"的感觉** ——
+   *   纯粒子玩家看不出自己赚了多少，纯文字又太安静。所以给一个专门的样式类。
+   */
+  floatCoins(x, y, amount) {
+    this.floatText(x, y, '+' + fmt(amount), 'coin-pop');
+  }
+
+  // ── 过场卡（批 5）──────────────────────────────────────────
+  /**
+   * 全屏黑底 + 打字机逐字。**只有 3 行**（多一行就变成"要我读东西"）。
+   *
+   * ⚠ 用 `setInterval` 逐字推进，而不是 CSS `steps()`：
+   *   `steps()` 那种做法要 `nowrap + overflow:hidden + 宽度动画`，**多行会坏**，
+   *   而这里恰好是 3 行。JS 逐字还多一个好处 —— "点一下补完"只是把 `textContent`
+   *   设成全文，不会留下半截动画状态。
+   */
+  showCutscene(lines, onDone) {
+    const el = this.el.cutscene;
+    const txt = this.el.cutText;
+    if (!el || !txt) { if (onDone) onDone(); return; }
+    const full = lines.join('\n');
+    let i = 0;
+    this._cutFull = full;
+    this._cutDone = onDone || null;
+    el.classList.remove('hidden');
+    // 点击绑定只做一次（ 每次换图都会调）
+    if (!el._bound) { el._bound = true; el.onclick = () => this.cutTap(); }
+    txt.textContent = '';
+    txt.classList.add('done');           // 先不显示光标，免得空行闪一下
+    clearInterval(this._cutTimer);
+    this._cutTimer = setInterval(() => {
+      i += 1;
+      txt.textContent = full.slice(0, i);
+      if (i >= full.length) { clearInterval(this._cutTimer); txt.classList.remove('done'); }
+    }, 45);
+  }
+
+  /**
+   * 过场期间点一下：**没打完就补完，打完了才收起**。
+   * 这是"跳过"和"继续"共用同一个手势 —— 玩家不用学两个操作。
+   */
+  cutTap() {
+    const el = this.el.cutscene;
+    if (!el || el.classList.contains('hidden')) return false;
+    const txt = this.el.cutText;
+    clearInterval(this._cutTimer);
+    if (txt.textContent.length < (this._cutFull || '').length) {
+      txt.textContent = this._cutFull;      // 第一次点：补完
+      txt.classList.remove('done');
+      return true;
+    }
+    el.classList.add('hidden');             // 第二次点：收起
+    const cb = this._cutDone;
+    this._cutDone = null;
+    if (cb) cb();
+    return true;
+  }
+
+  /** 过场是不是正在播（`game.js` 的输入要据此让路） */
+  get cutsceneOpen() {
+    return !!this.el.cutscene && !this.el.cutscene.classList.contains('hidden');
+  }
+
   // ── 飘字 ─────────────────────────────────────────────────
   /**
    * 飘字。`icon` 给一个 GLYPH 名字时，会在文字前面挂一个内联 SVG 图标
@@ -605,16 +767,19 @@ export class UI {
     const ringing = !!this._phone.handlers.ringingCall?.();
     // 未读新枪（v0.7 第三批）：枪店图标上挂一个红点，多于一把时显示数字
     const gunNews = (this._phone.handlers.gunNews && this._phone.handlers.gunNews()) || [];
+    // 未读短信（批 5）：手机图标 / 短信图标上挂红点
+    const smsUnread = (this._phone.handlers.smsUnread && this._phone.handlers.smsUnread()) || 0;
     // 桌面 App 列表 = **已解锁的那些**（v0.7：船厂要等船厂老板打来电话才出现）。
     // ⚠ 解锁名单由 game 给（`handlers.apps`）—— 界面不自己判断"该不该有这一格"，
     //   否则"桌面多出一个没被介绍过的 App"这种错会藏在 UI 里。
     const unlocked = (this._phone.handlers.apps && this._phone.handlers.apps()) || null;
-    const apps = [['call', '电话'], ['shop', '渔具店'], ['gunshop', '枪店'], ['codex', '鱼图鉴'],
-      ['route', '航线'], ['boat', '船厂'], ['settings', '设置']]
+    // ⚠ 短信排在电话后面：两者都是"有人找你"，放一起玩家一眼就知道去哪看。
+    const apps = [['call', '电话'], ['sms', '短信'], ['shop', '渔具店'], ['gunshop', '枪店'],
+      ['codex', '鱼图鉴'], ['route', '航线'], ['boat', '船厂'], ['radio', '电台'], ['settings', '设置']]
       .filter(([id]) => !unlocked || unlocked.includes(id))
       .map(([id, nm]) => `
         <button class="p-app-item" data-app="${id}">
-          <span class="p-ico ${id}">${glyph(id, 28)}${id === 'call' && ringing ? '<i class="p-badge"></i>' : ''}${id === 'gunshop' && gunNews.length ? `<i class="p-badge num">${gunNews.length > 1 ? gunNews.length : ''}</i>` : ''}</span><span>${nm}</span>
+          <span class="p-ico ${id}">${glyph(id, 28)}${id === 'call' && ringing ? '<i class="p-badge"></i>' : ''}${id === 'sms' && smsUnread ? '<i class="p-badge"></i>' : ''}${id === 'gunshop' && gunNews.length ? `<i class="p-badge num">${gunNews.length > 1 ? gunNews.length : ''}</i>` : ''}</span><span>${nm}</span>
         </button>`).join('');
 
     // 图鉴进度只算**本图**的鱼种。全局进度放在图鉴 App 里，
@@ -626,6 +791,7 @@ export class UI {
 
     this.el.pHome.innerHTML = `
       <div class="p-widget">
+        ${save.beatGame ? `<div class="p-cleared">债 务 已 结 清</div>` : ''}
         <div class="p-w-map">当 前 地 图 · ${map.en}</div>
         <div class="p-w-name">${map.name}</div>
         <div class="p-w-row">
@@ -667,6 +833,60 @@ export class UI {
     this.el.pApp.classList.remove('hidden');
     this._renderApp();
     this.el.pApp.scrollTop = 0;
+    // 打开短信 = 已读（批 5）。⚠ 放在  **之后** ——
+    //   先标已读的话，标题栏的"N 条新消息"永远显示不出来。
+    if (id === 'sms' && this._phone.handlers.readSms) this._phone.handlers.readSms();
+  }
+
+  // ── 短信 / 电台（批 5）────────────────────────────────────
+  /**
+   * 短信：按发件人分成两条**会话线**（小鲟 / 渔业协会），气泡左右分开。
+   *
+   * 为什么按发件人分组而不是按时间排一条流水：玩家打开短信是**找笑话**的，
+   * 不是查收件箱。分成两条线之后"小鲟今天又说了什么废话"一眼就能看到底。
+   *
+   * ⚠ 新消息的判定在 `game.js`（`_syncSms`），界面只读 `handlers.sms()` 给的结果 ——
+   *   和枪店红点同一条原则：**判断只在一处**。
+   */
+  _smsNote(handlers) {
+    const n = (handlers.smsUnread && handlers.smsUnread()) || 0;
+    return n ? `${n} 条新消息` : '已读完';
+  }
+
+  _smsBody(handlers) {
+    const threads = (handlers.sms && handlers.sms()) || [];
+    if (!threads.length) return '<div class="p-note" style="margin:0">还没有收到任何消息。</div>';
+    return threads.map((t) => {
+      const s = SENDERS[t.who] || SENDERS.ai;
+      const bubbles = t.text.map((line) => `
+        <div class="sms-b ${t.who === 'assoc' ? 'assoc' : 'ai'}">
+          <span class="sms-t">${line}</span>
+        </div>`).join('');
+      return `
+        <div class="sms-thread">
+          <div class="sms-head">
+            <span class="sms-ava ${t.who}">${glyph(s.icon, 20)}</span>
+            <b>${s.name}</b><i>${s.en}</i>
+          </div>
+          ${bubbles}
+        </div>`;
+    }).join('');
+  }
+
+  /**
+   * 电台：随机播一条荒诞新闻。**和玩法完全无关**（`EXPANSION.md` §6.6）。
+   *
+   * 「换台」按钮只是重掷一次 —— 它不保存、不计数、不解锁任何东西。
+   * 这一整个 App 存在的意义就是"玩家随手点开，读到一条和自己无关的荒唐新闻"。
+   */
+  _radioBody() {
+    const line = RADIO[Math.floor(Math.random() * RADIO.length)];
+    return `
+      <div class="radio-box">
+        <div class="radio-freq"><span class="radio-dot"></span>88.6 MHz · 海上广播</div>
+        <div class="radio-txt">${line}</div>
+      </div>
+      <button class="radio-switch" data-radio>换 台</button>`;
   }
 
   /** 数据变了（买了东西 / 清了存档）→ 重绘当前 App */
@@ -694,11 +914,16 @@ export class UI {
     else if (id === 'route') html = this._appShell('航 线', `金币 ${fmt(save.coins)}`, this._routeBody(save, handlers));
     else if (id === 'boat') html = this._appShell('船 厂', `金币 ${fmt(save.coins)}`, this._boatBody(save, handlers));
     else if (id === 'settings') html = this._appShell('设 置', 'v1.0', this._settingsBody(save, handlers));
+    else if (id === 'sms') html = this._appShell('短 信', this._smsNote(handlers), this._smsBody(handlers));
+    else if (id === 'radio') html = this._appShell('电 台', '海上广播 · 与您无关', this._radioBody());
 
     this.el.pApp.innerHTML = html;
 
     const back = this.el.pApp.querySelector('[data-back]');
     if (back) back.onclick = () => { handlers.tap && handlers.tap(); this.showPhoneHome(); };
+    // 电台"换台"：重掷一条。它不保存、不计数、不解锁任何东西 —— 纯氛围。
+    const rsw = this.el.pApp.querySelector('[data-radio]');
+    if (rsw) rsw.onclick = () => { handlers.tap && handlers.tap(); this._renderApp(); };
 
     if (id === 'call') {
       // 来电界面：推进对话 / 挂断 / 直接去目标 App。
@@ -865,8 +1090,9 @@ export class UI {
     const seg = Math.max(1, cap - from);
     // ⚠⚠ v0.7 第二批：`unlockMap` 的判定从「手里有没有这张图的**许可证**」
     //   改成了「**到没到过**这张图」（`mapProgress().owned`）。
-    //   许可证已经整条退役（两张图都是 0，没人再发证）—— 继续读 `save.licenses`
-    //   的话，鱼护 / 鱼饵 / 绞盘会**永远锁在「未解锁」**，玩家换到极地也买不到。
+    //   许可证机制已整条删除（2026-09-20 连 `_licenses()` 与换图里的许可证分支一起清了）——
+    //   当年继续读 `save.licenses` 的话，鱼护 / 鱼饵 / 绞盘会**永远锁在「未解锁」**，
+    //   玩家换到极地也买不到。**这里只认 `owned`，新代码不要去碰 `save.licenses`。**
     const routes = (this._phone && this._phone.handlers.mapList && this._phone.handlers.mapList()) || [];
     const reached = (mapId) => routes.some((p) => p.map.id === mapId && p.owned);
     let lastTier = '';
@@ -877,9 +1103,10 @@ export class UI {
       const maxLv = maxLvOf(key);
       const oneShot = !!u.oneShot;
       const maxed = lv >= maxLv;                        // 该项满级（一次性项买过就是满级）
-      // ⚠ 分段解锁（v0.6）：`unlockMap` 指向的许可证还没拿到时，这一项不在货架上。
+      // ⚠ 分段解锁（v0.6）：`unlockMap` 指向的那张图还没**到过**时，这一项不在货架上。
       // ⚠⚠ `!maxed` 是**老存档**的兜底（B5）：绞盘改成 `unlockMap: 'polar'` 之后，
-      //   一个在改动之前就买过绞盘的老档，licenses 里没有 polar ——
+      //   一个在改动之前就买过绞盘的老档，`mapProgress().owned` 判不了 polar
+      //   （当年那一版看的是 `licenses` 里有没有 polar）——
       //   不加这个条件的话商店会把它显示成「未解锁」，
       //   而他手里那个「快速回收」按钮其实一直是可用的（game.js 只看 levels.winch）。
       //   **已拥有的东西不能被"没解锁"覆盖**，否则玩家会以为自己的钱白花了。
@@ -891,6 +1118,12 @@ export class UI {
       // 数值文案：一次性项没有「当前 → 下一级」，`upgradeValueText` 返回空串
       const cur = upgradeValueText(key, lv);
       const next = (capped || maxed) ? null : upgradeValueText(key, lv + 1);
+      // ⚠⚠ 待解锁提示里的**地图名必须从 `u.unlockMap` 取**，不能写死。
+      //   批 4 之前只有一张"下一张图"，写死「冰封极地」看不出问题；
+      //   加了第 3 张图之后，「耐压舱」（`unlockMap: 'lava'`）会顶着
+      //   「到过「冰封极地」后上架」出现在首图货架上 —— **玩家会照着它去潜极地，然后发现没用**。
+      //   这类"文案和判定不同源"的 bug 不会报错、不会闪退，只会让玩家白跑一趟。
+      const unlockName = u.unlockMap ? (mapById(u.unlockMap) || {}).name || u.unlockMap : '';
       // 单位只在**行尾**出现一次：`1033 → 1100m`，而不是 `1033m → 1100m`。
       // 商店那一列只有 ~176px，重复一遍单位要多占 14~28px，满级附近的长数字
       // 叠上重复单位就必然折行。封顶时（没有 → ）也要带上单位，否则当前值成了裸数字。
@@ -923,7 +1156,7 @@ export class UI {
           <div class="info">
             <div class="nm">${u.name}<span class="lv">${oneShot ? (lv > 0 ? '已拥有' : '未拥有') : `Lv.${lv} / ${cap}`}</span></div>
             <div class="ds">${u.desc}${locked ? '' : (nx ? ` · <span class="nx">${nx}</span>` : '')}</div>
-            ${locked ? `<div class="lock-hint">${glyph('lock', 11)}${u.tier === '工具' ? '高级强化' : '进阶强化'} · 到过「冰封极地」后上架</div>`
+            ${locked ? `<div class="lock-hint">${glyph('lock', 11)}${u.tier === '工具' ? '高级强化' : '进阶强化'} · 到过「${unlockName}」后上架</div>`
                      : (pips ? `<div class="pips">${pips}</div>` : '')}
           </div>
           ${btn}
@@ -1224,6 +1457,10 @@ export class UI {
               + `<span class="cx-val">${coinIcon(12)} ${def.value}</span>`
               + `<span class="cx-cnt">钓到 ${rec.n} 次 · 最高 ${rec.best}</span>`
             : '<span class="cx-lock">未 钓 获</span>';
+          // 小鲟的注脚（批 5）：**只有"有话可说"的鱼才有** —— 见 story.js 的 CODEX_NOTE。
+          // 给每条鱼硬凑一句会让注脚从"彩蛋"变成"必须读完的作业"。
+          const note = (known && this._phone && this._phone.handlers.codexNote)
+            ? this._phone.handlers.codexNote(def.id) : null;
           const desc = known
             ? def.desc
             : (z.zone.top === 0
@@ -1237,6 +1474,7 @@ export class UI {
               <div class="cx-nm">${nm}</div>
               <div class="cx-meta">${meta}</div>
               <div class="cx-desc">${desc}</div>
+              ${note ? `<div class="cx-note">${note}</div>` : ''}
               <div class="cx-where">${g.map.name} · ${zoneLabel(def)}</div>
             </div>
           </div>`;

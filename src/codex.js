@@ -43,12 +43,6 @@ export function primaryZone(def) {
   return ZONES.find((z) => z.id === def.zones[0]) || ZONES[0];
 }
 
-/** 鱼属于哪张地图 */
-export function mapLabel(def) {
-  const m = mapOfSpecies(def);
-  return m.name;
-}
-
 /**
  * 图鉴里显示的「所在海域」文案，跨区鱼会带上第二层。
  * 用 `nick`（阳光浅滩 / 宁静海湾…）而不是功能名（表层海域 / 深层海域），

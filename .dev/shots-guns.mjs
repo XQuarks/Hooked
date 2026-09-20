@@ -132,7 +132,7 @@ for (const [id, fire, layout] of MECH) {
     g.closePhone();
     g.save.guns.current = '${id}'; g.save.guns.owned = cfg.GUN_ORDER.slice(1);
     g.save.guns.levels['${id}'] = 3;
-    g.state = 'air'; g.airFish = []; g.birds = []; g.airT = 0; g.airClearT = 0;
+    g.state = 'air'; g.airFish = []; g.sky = []; g.airT = 0; g.airClearT = 0;
     g.caught = []; g.hook.setVisible(false);
     g.ui.hideOverlay();
     g.world.clearParticles();

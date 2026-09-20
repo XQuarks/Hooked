@@ -3,9 +3,9 @@
  *
  * 覆盖：
  *   · 状态机 IDLE 待机 + 渔具店独立入口
- *   · 11 项升级（鱼线 / 鱼钩 / 铅坠 / 攻击力 / 灯具 / 绞盘 / 鱼护 / 保险 / 声呐 / 鱼饵 / 加固）
+ *   · 7 项升级（鱼线 / 鱼钩 / 铅坠 / 灯具 / 鱼护 / 鱼饵 / 绞盘）—— 断言走 UPGRADE_ORDER 现值，不写死
  *   · 核心逻辑反转：下潜碰鱼→自动上升；上升碰鱼→勾住
- *   · 空中结算及时性（不再被飞鸟卡住）
+ *   · 空中结算及时性（不再被天空目标卡住）
  *   · 空中镜头不跟随河豚
  *   · 深海黑暗 + 灯具照明 + 两侧地形
  *   · 多屏幕比例
@@ -147,8 +147,11 @@ try {
   await shot('01-idle');
 
   // ═══════════════════════════════════════════════════════
-  // T6 手机 → 渔具店 App + 11 项升级
+  // T6 手机 → 渔具店 App
   // ═══════════════════════════════════════════════════════
+  // ⚠ 把 config 挂到 window 上，T7 才能用**现值**断言项数
+  //   （写死"7 项"的话，每加一项升级这条断言就要改一次 —— 这正是手抄派生数据的老病）。
+  await ev(`(async()=>{ window.__cfg = await import('./src/config.js'); return 'ok'; })()`);
   await ev('document.getElementById("phoneBtn").click()');
   await ev('window.step(6)');
   await ev(`document.querySelector('[data-app="shop"]').click()`);
@@ -158,13 +161,15 @@ try {
     phone: !document.getElementById('phoneLayer').classList.contains('hidden'),
     app: window.__game.ui.currentApp,
     items: document.querySelectorAll('#pApp .item').length,
+    total: window.__cfg.UPGRADE_ORDER.length,
     names: [...document.querySelectorAll('#pApp .item .nm')].map(e=>e.textContent.replace(/Lv\\.\\d+/,'').trim()),
   })`));
   check('T6 手机里打开渔具店 App（状态仍是 idle，世界继续跑）',
     shop.phone === true && shop.app === 'shop' && shop.state === 'idle',
     `state=${shop.state} app=${shop.app}`);
-  check('T7 商店有 7 项（4 基础 + 2 进阶 + 1 工具）',
-    shop.items === 7, 'items=' + shop.items + ' → ' + shop.names.join('/'));
+  check('T7 商店把 UPGRADE_ORDER 全渲染出来了（含"待解锁"的暗行）',
+    shop.items === shop.total,
+    `items=${shop.items} / total=${shop.total} → ${shop.names.join('/')}`);
   await shot('02-shop');
 
   // 给钱，逐项买满，验证数值真的变了
@@ -204,7 +209,7 @@ try {
   //   （"没证时显示未解锁"由 verify7 的 B10 守，不要在这里重复验。）
   const winch = J(await ev(`JSON.stringify((()=>{
     // v0.7 第二批：解锁判定改成"到没到过那张图"（许可证退役）
-    window.__game.save.chart = true;
+    window.__game.save.charts = { polar: true };
     window.__game.save.boats = { owned: ['golden'], current: 'golden' };
     window.__game.save.coins = 9999999;
     window.__game.ui.refreshApp();
@@ -358,20 +363,20 @@ try {
     `普通鱼+河豚 camY=${camTest.withNormal}，只有河豚 camY=${camTest.onlyPuffer}`);
 
   // ═══════════════════════════════════════════════════════
-  // T22 结算及时性（关键修复：不再被飞鸟卡住）
+  // T22 结算及时性（关键修复：不再被天空目标卡住 —— 结算只数**鱼**）
   // ═══════════════════════════════════════════════════════
   await ev(`(()=>{const g=window.__game;
     if (g.state !== 'air') { g.state='air'; g.airT=0; }
     g.airFish.forEach(f=>f.kill()); g.airFish=[];
     g._spawnBird();                       // 故意留一只鸟在场上
     g.airT = 0;
-    return g.birds.length;})()`);
+    return g.sky.length;})()`);
   // ⚠ 必须超过 airSettleGrace（v0.3.1 起是 1.8s）。以前写死 1.5s —— 加长停留之后就不够了，
   //   会误报成"没有结算"。
   await ev('window.step(175)');  // 2.92 秒
-  const settle = J(await ev('JSON.stringify({state: window.__game.state, birds: window.__game.birds.length})'));
+  const settle = J(await ev('JSON.stringify({state: window.__game.state, sky: window.__game.sky.length})'));
   check('T22 没有可打的鱼时短暂停留后结算（鸟不拦截）', settle.state === 'result',
-    `2.92s 后 state=${settle.state} 鸟=${settle.birds}`);
+    `2.92s 后 state=${settle.state} 天空目标=${settle.sky}`);
 
   // ═══════════════════════════════════════════════════════
   // T22b 打完最后一条鱼要「停留一下」再结算（v0.3）
@@ -381,7 +386,7 @@ try {
   //   旧实现会立刻结算，新实现必须还停留在 air。
   // ═══════════════════════════════════════════════════════
   const hold = J(await ev(`JSON.stringify((()=>{const g=window.__game;
-    g.state='air'; g.airT=99; g.airClearT=0; g.airFish=[]; g.birds=[];
+    g.state='air'; g.airT=99; g.airClearT=0; g.airFish=[]; g.sky=[];
     // 只观察到 grace 之前：这条验的是"**没有**提前结算"，不必真的走到结算，
     // 免得在同一套里第二次进 enterResult。
     const snap = [];

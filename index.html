@@ -97,6 +97,24 @@
          图标由 ui._fillIcons() 注入 SVG，这里留空避免 emoji 闪一下。 -->
     <button id="fastReelBtn" class="fast-reel-btn"><span class="ico" id="fastReelIco"></span>快速回收</button>
     <div id="hint" class="hint"></div>
+    <!-- 屏幕闪白（批 7）：串上「带电」鱼时短促闪一下。纯视觉，不拦任何输入。 -->
+    <div id="screenFlash" class="screen-flash"></div>
+    <!-- Boss 血条（批 7）：只在 Boss 在场时显示。分段刻度由 ui.setBossBar 按 BOSS.segments 生成 -->
+    <div id="bossBar" class="boss-bar hidden">
+      <div class="boss-name" id="bossName"></div>
+      <div class="boss-track" id="bossTrack"><div class="boss-fill" id="bossFill"></div></div>
+    </div>
+    <!-- 深度氛围（批 6 特效 #11）：越深 vignette 越重。用 CSS 覆盖层，不引入后处理管线。 -->
+    <div id="vignette" class="vignette"></div>
+    <!-- 连击色差（批 6 特效 #4）：连击 ≥ 10 时屏幕边缘 RGB 分离 -->
+    <div id="comboFx" class="combo-fx"></div>
+    <!-- Boss 色偏（批 6 特效 #10）：Boss 在场时整个画面偏红 -->
+    <div id="bossShift" class="boss-shift"></div>
+    <!-- 过场卡（批 5）：进入某张图第一次时放一次，全屏黑底 + 打字机逐字。点任意处跳过。 -->
+    <div id="cutscene" class="cutscene hidden">
+      <div class="cut-text" id="cutText"></div>
+      <div class="cut-hint" id="cutHint">点击继续</div>
+    </div>
   </div>
 
   <!-- 手机界面：打开后是一台占满屏幕的巨大智能手机，商店 / 图鉴 / 设置都是里面的 App -->

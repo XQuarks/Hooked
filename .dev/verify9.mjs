@@ -13,7 +13,8 @@
  *     · 攻击力倍率**只作用于伤害，不作用于半径**（半径是每把枪的身份）
  *   B 枪店（浏览器）：7 张卡 / 购买 / 装备 / 升级 / 买不起 / 满级 / 不溢出 / 零 emoji
  *   C 机制（浏览器，冻结主循环手动步进）：单点 / 间隔 / 弹匣换弹 / 持续连发预热 /
- *     激光递增 / 激光过热 / 巴雷特单发 / 鱼叉穿透 / 散弹覆盖 / 攻击力倍率 / 枪械条
+ *     激光递增 / 激光过热 / 巴雷特单发 / 鱼叉穿透 / 散弹覆盖 / **散弹弹丸数（C9b · B11 的验收）** /
+ *     攻击力倍率 / 枪械条
  *   D 存档：旧存档迁移、等级钳制、脏 current 回退、刷新保持
  *   E 冒烟：完整一竿 + 控制台零报错
  *
@@ -49,19 +50,23 @@ const lvAll = (arr) => arr.every((v) => Number.isFinite(v));
 // ═══════════════════════════════════════════════════════════
 console.log('\n── A 枪械数值表 ──');
 
-check('A1 GUNS 共 7 把枪，每把 6 档（Lv0~Lv5 = 可升级 5 级），id 唯一且齐全',
-  GUNS.length === 7 && GUN_ORDER.length === 7 && new Set(GUN_ORDER).size === 7
+// ⚠ 不写死枪数：批 4 加了第 8 把（榴弹枪）。这里断言的是**结构**（表 ↔ 顺序表一致、id 唯一），
+//   数量只用 `GUN_ORDER.length`（测试自己 import 了 config，那就是源头）。
+check('A1 GUNS 与 GUN_ORDER 一致，每把 6 档（Lv0~Lv5 = 可升级 5 级），id 唯一且齐全',
+  GUNS.length === GUN_ORDER.length && new Set(GUN_ORDER).size === GUNS.length && GUNS.length >= 8
   && GUN_MAX_LEVEL === 5
   && GUNS.every((g) => g.id && g.name && g.en && g.icon && g.mech && g.tier
     && g.dmg.length === 6 && g.rad.length === 6 && g.cd.length === 6
     && lvAll(g.dmg) && lvAll(g.rad) && lvAll(g.cd)),
   `${GUN_ORDER.join(' / ')}`);
 
-const MECHS = new Set(['single', 'burst', 'auto', 'laser', 'pierce']);
+// ⚠ 批 4 加了第 6 种机制 `lob`（榴弹枪：延迟爆炸）—— 新机制必须加进这张白名单，
+//   否则 A2 会把它当成未知机制。
+const MECHS = new Set(['single', 'burst', 'auto', 'laser', 'pierce', 'lob']);
 const mechBad = GUNS.filter((g) => !MECHS.has(g.mech)).map((g) => g.id);
 check('A2 mech 都是已知机制，且用户点名的 5 种各有一把',
   mechBad.length === 0
-  && ['single', 'burst', 'auto', 'laser', 'pierce'].every((m) => GUNS.some((g) => g.mech === m)),
+  && [...MECHS].every((m) => GUNS.some((g) => g.mech === m)),
   `机制：${GUNS.map((g) => g.id + ':' + g.mech).join(' ')}`);
 
 // 机制专属字段：有弹匣的必须成对出现；散弹/激光/加特林的专属参数必须存在
@@ -70,9 +75,14 @@ for (const g of GUNS) {
   const hasMag = Array.isArray(g.mag);
   if (hasMag !== Array.isArray(g.reload)) fieldBad.push(g.id + ':弹匣/换弹不成对');
   if (hasMag && (!lvAll(g.mag) || !lvAll(g.reload))) fieldBad.push(g.id + ':弹匣数值非法');
-  if (g.mech === 'shotgun' && !(g.pellets >= 2 && g.spread > 0)) fieldBad.push(g.id + ':缺 pellets/spread');
+  // ⚠ 这里以前写的是 `g.mech === 'shotgun'` —— 而**没有任何一把枪的 mech 叫 shotgun**
+  //   （散弹枪的 mech 是 'single'），所以这条判断**永远为假、永远不报错**，
+  //   是一句"空过的断言"。B11 就是从这个洞里漏过去的。判据要挂在**数据**上（`pellets`），
+  //   不能挂在"我以为它会叫什么名字"上。
+  if ((g.pellets || 0) > 1 && !(g.pellets >= 2 && g.spread > 0)) fieldBad.push(g.id + ':缺 pellets/spread');
   if (g.mech === 'auto' && !(g.spinup > 0)) fieldBad.push(g.id + ':缺 spinup');
   if (g.mech === 'laser' && !(g.ramp.length === 6 && g.rampMax > 0)) fieldBad.push(g.id + ':缺 ramp/rampMax');
+  if (g.mech === 'lob' && !(g.fuse > 0)) fieldBad.push(g.id + ':缺 fuse（延迟爆炸没有引信）');
 }
 check('A3 机制专属字段齐全（Uzi/激光有弹匣、散弹有弹丸数、加特林有预热、激光有递增）',
   fieldBad.length === 0, fieldBad.join(',') || '7 把枪字段自洽');
@@ -103,7 +113,7 @@ const shallowFish = SPECIES.filter((s) => s.zones.some((z) => {
   return zone && zone.top === 0;      // 每张图最浅的那一层
 }));
 const shotCounts = shallowFish.map((s) => Math.ceil(s.hp / p0.damage));
-check('A6 未升级手枪打浅层鱼 1~3 枪可击杀（两张图的表层鱼全部落在区间内）',
+check('A6 未升级手枪打浅层鱼 1~3 枪可击杀（每张图的表层鱼全部落在区间内）',
   shallowFish.length >= 8 && shotCounts.every((n) => n >= 1 && n <= 3),
   shallowFish.map((s, i) => `${s.name}(hp${s.hp})→${shotCounts[i]}枪`).join(' · '));
 
@@ -134,10 +144,20 @@ check('A7c 全局血量跨度足够大（最脆 2 → 最厚 120，≥ 15 倍）
   Math.max(...hpAll) / Math.min(...hpAll) >= 15 && new Set(hpAll).size >= 12,
   `${Math.min(...hpAll)} ~ ${Math.max(...hpAll)}（${new Set(hpAll).size} 个不同档位）`);
 
-check('A8 血量最高的是 Boss，且没有超过它两倍以外的离群值',
-  Math.max(...SPECIES.map((s) => s.hp)) === 120
-  && SPECIES.find((s) => s.hp === 120).boss === true,
-  `最高 hp = ${Math.max(...SPECIES.map((s) => s.hp))}（${SPECIES.find((s) => s.hp === 120).name}）`);
+// ⚠ 不写死"最高 hp = 120"：批 4 加了第 3 张图，它的 Boss 是 320。
+//   真正的不变量是 —— **每张图的 Boss 就是那张图最厚的那条**（Boss 之外不该有离群值）。
+const maxHp = Math.max(...SPECIES.map((s) => s.hp));
+const maxHpFish = SPECIES.find((s) => s.hp === maxHp);
+// ⚠ 判据改成"**最厚的那条是 Boss**"而不是"第一个 Boss 就是最厚的"：
+//   批 8b 之后一张图可能有 2 个 Boss（常规 + 终章），`find` 拿到的不一定是最厚的那个。
+const bossIsTop = MAPS.every((m) => {
+  const pool = SPECIES.filter((s) => s.zones.some((z) => (ZONES.find((x) => x.id === z) || {}).map === m.id));
+  const top = pool.find((s) => s.hp === Math.max(...pool.map((x) => x.hp)));
+  return !!top && top.boss === true;
+});
+check('A8 每张图的 Boss 就是那张图最厚的一条（Boss 之外没有离群的血牛）',
+  maxHpFish.boss === true && maxHpFish.elite === false && bossIsTop,
+  `全局最高 hp = ${maxHp}（${maxHpFish.name}）· 每图 Boss 都是本图最厚 = ${bossIsTop}`);
 
 // gunStats 的钳制：脏数据不能返回 undefined（undefined 顺着乘法会变成 NaN 伤害）
 const dirty = [
@@ -302,7 +322,7 @@ try {
   // 每个机制测试共用的夹具：进空中、清场、装枪、统计 _shoot 调用次数
   const setupGun = (id, lv) => ev(`(()=>{const g=window.__game; const cfg=window.__cfg;
     g.closePhone(); g.ui.hideOverlay();
-    g.state='air'; g.airFish=[]; g.birds=[]; g.airT=0; g.airClearT=0; g.caught=[];
+    g.state='air'; g.airFish=[]; g.sky=[]; g.airT=0; g.airClearT=0; g.caught=[];
     g.hook.setVisible(false); g.world.clearParticles();
     g.save.guns.current='${id}';
     g.save.guns.owned = cfg.GUN_ORDER.filter(x=>x!=='pistol');
@@ -469,6 +489,31 @@ try {
   check('C9 散弹枪：一次射击覆盖一大片（半径 40 内 7 条至少命中 5 条）',
     c9.dead >= 5, `${c9.n} 条里命中 ${c9.dead} 条`);
 
+  // C9b（B11 的验收）：散弹枪一次开火**真的**打出 `pellets` 颗弹丸。
+  //
+  // ⚠ 这条在 v0.7 第四批之前**必挂**：那时 `_shoot()` 用 `switch (g.mech)` 分派，
+  //   而散弹枪的 `mech` 是 `'single'` → `case 'shotgun'` 永远进不去，
+  //   `_shootShotgun()` 是死代码，一次开火只有 **1** 个爆炸圈。
+  // ⚠ C9 抓不到它（单发爆炸半径 28 也能让"半径 40 内 7 条命中 5 条"成立）——
+  //   所以验收必须量**弹丸数本身**，不能只量"覆盖了多大一片"。
+  await setupGun('shotgun', 0);
+  const c9b = J(await ev(`(()=>{const g=window.__game;
+    let blasts = 0, shotgunFn = 0;
+    const w = g.world;
+    const origBurst = w.burstExplosion.bind(w);
+    w.burstExplosion = (...a) => { blasts++; return origBurst(...a); };
+    const origFn = g._shootShotgun.bind(g);
+    g._shootShotgun = (...a) => { shotgunFn++; return origFn(...a); };
+    g.airFish = [];                      // 场上没有鱼 → 不会有"击杀"带来的额外爆炸
+    g.gunCd = 0;
+    g._tapFire();
+    w.burstExplosion = origBurst;
+    g._shootShotgun = origFn;
+    return JSON.stringify({ pellets: g.gunStat.pellets, blasts, shotgunFn });})()`));
+  check('C9b 散弹枪一次开火真的打出 6 颗弹丸（不是 1 个爆炸圈）—— B11 的验收',
+    c9b.blasts === c9b.pellets && c9b.shotgunFn === 1,
+    `pellets=${c9b.pellets} · 爆炸圈 ${c9b.blasts} 个 · _shootShotgun 调用 ${c9b.shotgunFn} 次`);
+
   // C10 v0.5：攻击力已并入枪械 —— **升级枪械是伤害的唯一来源**，且完全不动半径。
   // 同时确认全局倍率被删干净了（`g.gunMul` 不该再存在）。
   await setupGun('pistol', 0);
@@ -536,7 +581,7 @@ try {
     // ⚠⚠ 解锁相关的存档字段必须**显式归零**：上一轮跑这套时 B5 的买枪会把这些
     //   一起 persist 进 localStorage，下一次跑就"开局已经在极地"——
     //   黑卡判定、新货播报全被上一轮污染（本次审计真踩到，队列里凭空多出三把枪）。
-    g.save.chart = false; g.save.boats = { owned: [], current: null }; g.save.boatApp = false;
+    g.save.charts = {}; g.save.boats = { owned: [], current: null }; g.save.boatApp = false;
     g.save.mapBest = {}; g.save.gunNews = []; g.save.gunAnnounced = [];
     g.save.guns = { owned: [], current: 'pistol', levels: Object.fromEntries(cfg.GUN_ORDER.map(k=>[k,0])) };
     g.save.coins = 0; g.ringingCall = null; g.ui.ringPhone(false, null);
@@ -545,8 +590,8 @@ try {
     g.showIdle(); return 'ok';})()`);
   await openGunshop();
   const b1 = J(await readGunshop());
-  check('B1 枪店列出全部 7 把枪，每把一张卡',
-    b1.n === 7, `${b1.n} 张 · ${b1.ids.join(' / ')}`);
+  check('B1 枪店列出全部枪，每把一张卡',
+    b1.n === GUN_ORDER.length, `${b1.n} 张 · ${b1.ids.join(' / ')}`);
   check('B2 开局只有手枪：它是唯一"装备中"的卡，其余都还没拥有',
     b1.current[0] === true && b1.current.filter(Boolean).length === 1
     && b1.owned[0] === true && b1.owned.filter(Boolean).length === 1,
@@ -569,9 +614,9 @@ try {
       firstName: (locked[0] && (locked[0].querySelector('.gs-t b') || {}).textContent) || '',
       hasDigit: locked.some(c => /[0-9]/.test(c.textContent)) };
   })())`));
-  check('B2b 首图只上架手枪：其余六把是黑卡（无购买按钮、无数值、无价格），只留名字与解锁条件',
-    b2b.total === 7 && b2b.locked === 6 && b2b.withBuy === 0 && b2b.withStats === 0
-    && b2b.withTip === 0 && b2b.withFoot === 0 && b2b.withLock === 6 && b2b.hasDigit === false,
+  check('B2b 首图只上架手枪：其余全是黑卡（无购买按钮、无数值、无价格），只留名字与解锁条件',
+    b2b.total === GUN_ORDER.length && b2b.locked === GUN_ORDER.length - 1 && b2b.withBuy === 0 && b2b.withStats === 0
+    && b2b.withTip === 0 && b2b.withFoot === 0 && b2b.withLock === GUN_ORDER.length - 1 && b2b.hasDigit === false,
     `黑卡 ${b2b.locked}/${b2b.total} · 第一张「${b2b.firstName}」· 带解锁条件 ${b2b.withLock}/${b2b.locked} · 泄数字 ${b2b.hasDigit}`);
 
   // ── 把场景推到"已经到过极地 + 潜到过最底"：六把枪全部上架 ──
@@ -583,12 +628,12 @@ try {
     const orig = g._syncGunNews.bind(g);
     g._syncGunNews = (...a) => {
       const before = { ann: g.save.gunAnnounced.length, owned: g.save.guns.owned.length,
-        mapBestPolar: g.save.mapBest.polar || 0, chart: g.save.chart };
+        mapBestPolar: g.save.mapBest.polar || 0, chart: !!g.save.charts.polar };
       const r = orig(...a);
       g._newsTrace.push({ before, got: r.slice(), stack: (new Error().stack || '').split('\\n').slice(2, 5).join(' <- ') });
       return r;
     };
-    g.save.chart = true;
+    g.save.charts = { polar: true };
     g.save.boats = { owned: ['golden'], current: 'golden' };
     g.save.mapBest = { polar: 1240 };
     g.save.gunNews = []; g.save.gunAnnounced = window.__cfg.GUN_ORDER.slice();
@@ -599,7 +644,7 @@ try {
     try { g.ui.refreshApp(); } catch (e) { renderErr = String((e && e.message) || e); }
     const cards = [...document.querySelectorAll('#pApp .gs-item')];
     const shot = cards.find(c => c.textContent.includes('散弹枪'));
-    return { chart: g.save.chart, boats: g.save.boats.owned.length,
+    return { chart: !!g.save.charts.polar, boats: g.save.boats.owned.length,
       mapBestPolar: g.save.mapBest.polar || 0,
       ann: g.save.gunAnnounced.length,
       unlocked: g.gunUnlocked(cfg.gunById('shotgun')),
@@ -681,7 +726,7 @@ try {
     // 每步自清理：只断言"这一次 sync 的增量"，不依赖上一步的存档残留 ——
     //   跨步骤状态会让失败原因飘到完全不相干的地方（本次审计真踩到）。
     g.state='idle'; g.phoneOpen=false; g.ui.closePhone();
-    g.save.chart = true; g.save.boats = { owned: ['golden'], current: 'golden' };
+    g.save.charts = { polar: true }; g.save.boats = { owned: ['golden'], current: 'golden' };
     g.save.mapBest = { polar: 0 };
     g.save.guns = { owned: [], current: 'pistol', levels: Object.fromEntries(cfg.GUN_ORDER.map(k=>[k,0])) };
     g.save.gunNews = []; g.save.gunAnnounced = [];
@@ -704,6 +749,9 @@ try {
     n2.open === true && n2.badge === true, `红点=${n2.badge}`);
 
   const n3 = J(await ev(`JSON.stringify((()=>{const g=window.__game;
+    // ⚠ 批 5 起手机红点 = 未读新枪 + 来电 + **未读短信**。这一组验的是"点开枪店清掉新枪那部分"，
+    //   所以先把短信标记成已读 —— 不标的话红点会一直亮（那是**对的行为**，不是 bug）。
+    g.save.smsSeen = g.save.sms.length; g.syncBadges();
     g.ui.openApp('gunshop'); g.ui.refreshApp();
     const cards = [...document.querySelectorAll('#pApp .gs-item')];
     const shot = cards.find(c => c.textContent.includes('散弹枪'));
@@ -715,7 +763,9 @@ try {
     g.ui.showPhoneHome();   // 桌面重绘之后红点才会从图标上消失（openApp 只清数据）
     out.homeBadge = !!document.querySelector('#pHome .p-ico.gunshop .p-badge');
     return out;})())`));
-  check('N3 点开枪店：未读清零（红点全灭），散弹枪挂「NEW」，还没解锁的 Uzi 仍是黑卡',
+  // ⚠ 批 5 起手机红点 = 未读新枪 + 来电 + **未读短信**。这一条验的是"点开枪店清掉新枪那部分"，
+  //   所以先把短信标记成已读，否则红点会因为短信一直亮着（那是**对的行为**，不是 bug）。
+  check('N3 点开枪店：新枪未读清零（短信已读的前提下红点全灭），散弹枪挂「NEW」，还没解锁的 Uzi 仍是黑卡',
     n3.news.length === 0 && n3.dot === false && n3.homeBadge === false
     && n3.newTag === true && n3.uziLocked === true,
     `未读 ${JSON.stringify(n3.news)} · 手机红点=${n3.dot} · 桌面红点=${n3.homeBadge} · NEW=${n3.newTag} · Uzi 黑卡=${n3.uziLocked}`);
@@ -770,8 +820,8 @@ try {
   check('D2 current 指向一把没买的枪 → 读档退回手枪（不会"拿着没有的枪开火"）',
     d1.current === 'pistol' && d1.mech === 'single' && Number.isFinite(d1.dmg),
     `current=${d1.current}（存档里写的是 barrett）· 实际机制 ${d1.mech} · 单发 ${d1.dmg}`);
-  check('D3 枪械等级表在读档后被补齐成 7 个键（不是只剩存档里那几个）',
-    d1.keyCount === 7, `${d1.keyCount} 个键`);
+  check('D3 枪械等级表在读档后被补齐成 GUN_ORDER.length 个键（不是只剩存档里那几个）',
+    d1.keyCount === GUN_ORDER.length, `${d1.keyCount} 个键`);
 
   // D4 完全没有 guns 字段的老存档（v0.4 之前）也要能读
   await ev(`(()=>{ localStorage.setItem('hooked.save.v3', JSON.stringify({

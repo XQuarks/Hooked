@@ -735,6 +735,270 @@ canvas#game {
   50%      { opacity: 0.64; }
 }
 
+/* ── 屏幕闪白（批 7）：串上「带电」鱼时短促闪一下 ──
+   ⚠ 纯视觉、`pointer-events: none` —— 它绝不能拦住抛竿 / 开火那些点击。
+   ⚠ 用 opacity + transition 而不是动画：`ui.flashScreen()` 只是切一下 class，
+   浏览器自己把 0 → 0.55 → 0 走完，不需要 JS 记时（少一个会漏的 timer）。 */
+.screen-flash {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 60;
+  transition: opacity 0.10s ease-out;
+}
+.screen-flash.on {
+  opacity: 0.55;
+  transition: opacity 0.05s ease-in;
+}
+
+/* ── Boss 血条（批 7）──
+   位置贴着屏幕顶部、比深度 chip 高一层：Boss 在场时它是玩家第一眼要看的东西。
+   ⚠ `pointer-events: none` —— 它横跨顶部，绝不能挡住抛竿 / 开火。 */
+.boss-bar {
+  position: absolute;
+  left: 50%;
+  /* ⚠ 顶栏（`.hud-top`）已经占了 `10px + safe-t` 那一条，所以这里往下让开 38px ——
+     不然 Boss 血条会压在金币 / 深度 chip 上，两边都读不清。 */
+  top: calc(48px + var(--safe-t));
+  transform: translateX(-50%);
+  width: min(64%, 300px);
+  z-index: 55;
+  pointer-events: none;
+  text-align: center;
+}
+.boss-bar.hidden { display: none; }
+.boss-name {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #ffd9a0;
+  text-shadow: 0 0 12px rgba(255, 120, 40, 0.9), 0 1px 3px rgba(0, 0, 0, 0.95);
+  margin-bottom: 4px;
+}
+.boss-track {
+  position: relative;
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(255, 190, 120, 0.45);
+  overflow: hidden;
+}
+/* 血条本体：从右往左掉（左对齐的填充，宽度 = 剩余血量比例） */
+.boss-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #ff9a3c, #ff4a2a);
+  transition: width 0.14s linear;
+}
+/* 分段刻度：每 1/segments 一条暗线，跨过它就换一次行为模式 */
+.boss-track i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+/* ── 深度氛围 vignette（批 6 特效 #11）──
+   用 CSS 覆盖层 + radial-gradient，**不引入后处理管线**。
+   ⚠ 用  而不是 SVG —— SVG 的  在多处注入时
+   同名 id 会冲突（项目里踩过两次）。
+   ⚠ ：它盖住整个画面，绝不能拦住点击。 */
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0;
+  background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 42%, rgba(0,6,16,0.92) 100%);
+  transition: opacity 0.5s linear;
+}
+
+/* ── 连击色差（批 6 特效 #4）──
+   连击 ≥ 10 时屏幕边缘轻微 RGB 分离。用**内阴影**做：红色偏左、青色偏右，
+   两边一叠就有"色差"的观感，而且不需要任何后处理。 */
+.combo-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 45;
+  opacity: 0;
+  box-shadow: inset 3px 0 0 -1px rgba(255,60,60,0.55), inset -3px 0 0 -1px rgba(60,255,255,0.55);
+  transition: opacity 0.25s ease-out;
+}
+
+/* ── Boss 色偏（批 6 特效 #10）── */
+.boss-shift {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0;
+  background: rgba(180, 30, 10, 0.16);
+  transition: opacity 0.45s ease-out;
+}
+
+/* ── 金币数字飘字（批 6 特效 #3）──
+   上浮 + 放大 1.4× + 淡出。和普通飘字分开一个类，因为"钱"要更响。 */
+.coin-pop {
+  font-size: 15px;
+  font-weight: 900;
+  color: #ffd85e;
+  text-shadow: 0 0 10px rgba(255, 190, 60, 0.95), 0 2px 4px rgba(0, 0, 0, 0.9);
+  animation: coinPop 0.7s ease-out forwards;
+}
+@keyframes coinPop {
+  0%   { transform: translate(-50%, 0) scale(0.8); opacity: 0; }
+  18%  { transform: translate(-50%, -8px) scale(1.4); opacity: 1; }
+  100% { transform: translate(-50%, -34px) scale(1.1); opacity: 0; }
+}
+
+/* ── 通关标记（终章）── */
+.p-cleared {
+  margin: -2px 0 8px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(255, 208, 106, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 208, 106, 0.42);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #ffd06a;
+  text-align: center;
+}
+
+/* ── 过场卡（批 5）──
+   全屏黑底 + 打字机。**只有 3 行** —— 多一行就变成"要我读东西"（EXPANSION §6.6）。
+   ⚠ `z-index` 比手机层（`--z-phone` 那档）**低**：过场播放时玩家如果点开了手机，
+   手机要盖在它上面（剧情永远不挡路）。 */
+.cutscene {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 0 28px;
+  cursor: pointer;
+}
+.cutscene.hidden { display: none; }
+.cut-text {
+  font-size: 16px;
+  line-height: 2.1;
+  letter-spacing: 0.08em;
+  color: #e8f4ff;
+  text-align: center;
+  white-space: pre-wrap;
+  min-height: 3em;
+}
+/* 打字机的光标：一个闪烁的下划线。`animation` 在文字打完那一刻被摘掉。 */
+.cut-text::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 2px;
+  margin-left: 4px;
+  background: #8fd8ff;
+  vertical-align: middle;
+  animation: cutBlink 0.9s steps(2) infinite;
+}
+.cut-text.done::after { display: none; }
+@keyframes cutBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.cut-hint {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: rgba(200, 226, 245, 0.5);
+}
+
+/* ── 短信（批 5）── */
+.sms-thread { margin: 0 0 18px; }
+.sms-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 8px;
+  font-size: 13px;
+}
+.sms-head b { color: #eaf4ff; font-weight: 800; }
+.sms-head i { color: rgba(200, 226, 245, 0.45); font-style: normal; font-size: 10px; letter-spacing: 0.1em; }
+.sms-ava {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9px;
+  background: #2b6ea8;
+  color: #eaf4ff;
+}
+/* ⚠ 协会是**灰底**、小鲟是**蓝底** —— 不用颜色区分的话，
+   两条会话线在 19px 的气泡里看起来完全一样。 */
+.sms-ava.assoc { background: #4a5058; color: #e6e9ec; }
+.sms-b {
+  max-width: 84%;
+  margin: 0 4px 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.sms-b.ai { background: #2b6ea8; color: #f2f9ff; border-bottom-left-radius: 4px; }
+.sms-b.assoc {
+  background: #3c4249; color: #e6e9ec;
+  border-bottom-right-radius: 4px;
+  margin-left: auto;
+  /* 公文风：左侧一道竖线（纯色叠加，不用渐变 —— 同名 id 会冲突） */
+  box-shadow: inset 3px 0 0 0 #8c949c;
+}
+
+/* ── 电台（批 5）── */
+.radio-box {
+  margin: 6px 4px 16px;
+  padding: 18px 16px;
+  border-radius: 14px;
+  background: #1e242b;
+  box-shadow: inset 0 0 0 1px rgba(140, 160, 180, 0.22);
+}
+.radio-freq {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; letter-spacing: 0.16em;
+  color: rgba(200, 226, 245, 0.55);
+  margin-bottom: 12px;
+}
+.radio-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #ff5a4a;
+  animation: radioPulse 1.6s ease-in-out infinite;
+}
+@keyframes radioPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+.radio-txt { font-size: 14px; line-height: 1.85; color: #eaf4ff; }
+.radio-switch {
+  display: block;
+  margin: 0 auto;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 11px;
+  background: #2b6ea8;
+  color: #f2f9ff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+/* ── 图鉴注脚（批 5）：小鲟的一句话 ── */
+.cx-note {
+  margin: 6px 0 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: rgba(43, 110, 168, 0.18);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgba(200, 226, 245, 0.86);
+}
+
 /* ============================================================
    遮罩层（标题 / 商店 / 结算）
    ============================================================ */

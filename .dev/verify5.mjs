@@ -336,7 +336,7 @@ try {
   const d2 = J(await ev(`(()=>{const g=window.__game;
     const def = window.__cfg.SPECIES.find(s=>s.id==='tuna');   // hp 9
     const f = g.fish.acquire(def); f.reset(0, 100);
-    g.state = 'air'; g.airFish = [f]; g.caught = []; g.birds = []; g.airT = 0;
+    g.state = 'air'; g.airFish = [f]; g.caught = []; g.sky = []; g.airT = 0;
     // v0.4：开火走枪械管线（_tapFire），冷却字段也从 fireCd 改成 gunCd。
     // v0.5：伤害**只**来自枪械档位（全局「攻击力」倍率已并入 GUNS[].dmg），所以断言直接读它。
     g.gunCd = 0;
@@ -358,7 +358,7 @@ try {
   const d4 = J(await ev(`(()=>{const g=window.__game;
     const def = window.__cfg.SPECIES.find(s=>s.id==='puffer');
     const f = g.fish.acquire(def); f.reset(0, 100);
-    g.state='air'; g.airFish=[f]; g.birds=[]; g.airT=0; g.fireCd=0;
+    g.state='air'; g.airFish=[f]; g.sky=[]; g.airT=0; g.fireCd=0;
     f.launch(0, 141, 0, 5);
     let frames = 0;
     while (g.state === 'air' && frames < 60*30) { window.step(1); frames++; }
@@ -375,7 +375,7 @@ try {
     const tf = window.__cfg.SPECIES.find(s=>s.id==='tuna');
     const a = g.fish.acquire(pf); a.reset(0, 100);
     const b = g.fish.acquire(tf); b.reset(0, 100);
-    g.state='air'; g.airFish=[a,b]; g.birds=[]; g.airT=0;
+    g.state='air'; g.airFish=[a,b]; g.sky=[]; g.airT=0;
     // ⚠ 初速要跟 airGravity 同比例（v0.2 里世界 ×2、重力也 ×2）——
     //   只改重力不改初速的话滞空时间会缩短一半，金枪鱼提前落水，
     //   这条断言就变成在测"鱼落水后该不该结算"了（那是另一条断言的事）。

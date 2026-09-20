@@ -3,13 +3,23 @@
  */
 import * as THREE from 'three';
 import {
-  WORLD, CAMERA, TUNING, WATER_STOPS, ALTITUDE_BANDS, DEEP, ICEBERG, mapMaxDepth, MODEL_SCALE,
-  MAX_LEVEL, SEABED, CHEST, mapById,
+  WORLD, CAMERA, TUNING, WATER_STOPS, ALTITUDE_BANDS, DEEP, ICEBERG, HEAT_VENT, WRECK_CELL,
+  mapMaxDepth, MODEL_SCALE, MAX_PARTICLES,
+  MAX_LEVEL, SEABED, CHEST, chartFrom,
 } from './config.js';
 
 // ─────────────────────────────────────────────────────────────
 // 工具
 // ─────────────────────────────────────────────────────────────
+// 所有"环"类特效（冲击波 / 声波 / 热泉脉冲）**共用这一个几何体** ——
+// 一个细圆环（内径 0.86、外径 1），缩放它就是直径。
+// ⚠ EXPANSION §8.3 的硬约束：不要为每个效果建新 geometry。
+let RING_GEO = null;
+const shRing = () => {
+  if (!RING_GEO) RING_GEO = new THREE.RingGeometry(0.86, 1, 40);
+  return RING_GEO;
+};
+
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -146,6 +156,11 @@ export function makeGlowTexture(inner = 'rgba(255,255,255,1)', outer = 'rgba(255
 // ─────────────────────────────────────────────────────────────
 // 粒子池
 // ─────────────────────────────────────────────────────────────
+// 全局粒子上限 `MAX_PARTICLES` 定义在 `config.js` —— 那里是数字的唯一来源，
+// 而且 `.dev/verify13.mjs` 的 C1 要能读到它才能验「真的不超过上限」
+// （world.js 引了 three，Node 里解析不了，测试没法从这个文件 import）。
+let liveParticles = 0;
+
 class ParticlePool {
   constructor(scene, geometry, material, max = 80) {
     this.scene = scene;
@@ -157,15 +172,21 @@ class ParticlePool {
       m.visible = false;
       m.matrixAutoUpdate = true;
       scene.add(m);
-      this.items.push({ mesh: m, active: false, vx: 0, vy: 0, g: 0, life: 0, maxLife: 1, spin: 0, scale: 1, fade: 1, drag: 0 });
+      this.items.push({ mesh: m, active: false, vx: 0, vy: 0, g: 0, life: 0, maxLife: 1, spin: 0, scale: 1, fade: 1, drag: 0, bounce: 0, bounceY: null });
     }
     this.cursor = 0;
     this.baseOpacity = material.opacity ?? 1;
   }
 
-  spawn({ x, y, z = 0, vx = 0, vy = 0, g = 0, life = 1, scale = 1, spin = 0, drag = 0 }) {
+  spawn({ x, y, z = 0, vx = 0, vy = 0, g = 0, life = 1, scale = 1, spin = 0, drag = 0, bounce = 0, bounceY = null }) {
+    // ⚠ 全局粒子上限（EXPANSION §8.3）：超了**直接丢弃**这个请求，不报错、不排队。
+    //   为什么是"丢弃"而不是"顶掉最老的"：特效是装饰，少一个没有任何玩法后果；
+    //   而顶掉最老的那个会让玩家正看着的粒子突然消失 —— 那才叫穿帮。
+    if (liveParticles >= MAX_PARTICLES) return null;
     const p = this.items[this.cursor];
     this.cursor = (this.cursor + 1) % this.max;
+    // 槽位本来是空的才算"新占了一个"；复用活跃槽位（环形缓冲绕回来了）不增加总数
+    if (!p.active) liveParticles++;
     p.active = true;
     p.mesh.visible = true;
     p.mesh.position.set(x, y, z);
@@ -174,6 +195,8 @@ class ParticlePool {
     p.vx = vx; p.vy = vy; p.g = g;
     p.life = life; p.maxLife = life;
     p.spin = spin; p.scale = scale; p.drag = drag;
+    // 弹跳（金币喷泉用）：碰到 `bounceY` 反弹一次，之后不再弹（`bounce` 自减到 0）
+    p.bounce = bounce; p.bounceY = bounceY;
     return p;
   }
 
@@ -181,7 +204,7 @@ class ParticlePool {
     for (const p of this.items) {
       if (!p.active) continue;
       p.life -= dt;
-      if (p.life <= 0) { p.active = false; p.mesh.visible = false; continue; }
+      if (p.life <= 0) { p.active = false; p.mesh.visible = false; liveParticles--; continue; }
       if (p.drag) {
         const k = Math.exp(-p.drag * dt);
         p.vx *= k; p.vy *= k;
@@ -189,6 +212,13 @@ class ParticlePool {
       p.vy += p.g * dt;
       p.mesh.position.x += p.vx * dt;
       p.mesh.position.y += p.vy * dt;
+      // 落地弹跳一次：反向 + 阻尼，并把弹跳次数用掉
+      if (p.bounce > 0 && p.bounceY != null && p.mesh.position.y < p.bounceY && p.vy < 0) {
+        p.mesh.position.y = p.bounceY;
+        p.vy = -p.vy * 0.45;
+        p.vx *= 0.6;
+        p.bounce -= 1;
+      }
       if (p.spin) p.mesh.rotation.z += p.spin * dt;
       const t = p.life / p.maxLife;
       p.mesh.scale.setScalar(p.scale * (0.35 + 0.65 * t));
@@ -197,7 +227,10 @@ class ParticlePool {
   }
 
   clear() {
-    for (const p of this.items) { p.active = false; p.mesh.visible = false; }
+    for (const p of this.items) {
+      if (p.active) liveParticles--;
+      p.active = false; p.mesh.visible = false;
+    }
   }
 }
 
@@ -389,10 +422,12 @@ export class World {
     this._buildDeepDecor();
     this._buildIceDecor();
     this._buildIcebergs();
+    this._buildHeatVents();
     this._buildSurface();
     this._buildBoat();
     this._buildSeabed();
     this._buildParticles();
+    this._buildRings();
     this._buildBlasts();
     this._buildVeil();
 
@@ -800,6 +835,143 @@ export class World {
     }
   }
 
+  /** 热泉柱组（长出来一次，之后只切显隐；换图时按需重建） */
+  _buildHeatVents() {
+    this.ventRoot = new THREE.Group();
+    this.ventRoot.visible = false;
+    this.scene.add(this.ventRoot);
+    this.vents = [];
+  }
+
+  /**
+   * 重新生成几条热泉柱（熔岩海沟专属）。on = false 时清空并整组隐藏。
+   *
+   * 一条柱子 = 一段**有限高**的竖直光柱（中心两条亮线 + 外面一层薄雾）。
+   * ⚠ 刻意不做"从海底通到水面"：通到顶的话整个上升段都在加速，
+   *   那就没有"经过热泉"这件事了（见 config 的 HEAT_VENT 注释）。
+   *
+   * ⚠ 用 `MeshBasicMaterial` + `AdditiveBlending`，**不用 `<defs>`/渐变**：
+   *   同名的 id 在多处注入时会互相冲突（项目里踩过两次）。
+   */
+  buildHeatVents(on) {
+    for (const v of this.vents) this.ventRoot.remove(v.mesh);
+    this.vents = [];
+    if (!on) { this.ventRoot.visible = false; return; }
+    this.ventRoot.visible = true;
+
+    // 固定种子：每次换图长得一样，不然玩家会觉得地图在乱跳
+    let seed = 20260918;
+    const rng = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    const n = Math.round(lerp(HEAT_VENT.count[0], HEAT_VENT.count[1], rng()));
+    const spanX = WORLD.fishHalfWidth * 2;
+    const maxD = this.map ? mapMaxDepth(this.map) : HEAT_VENT.top + 900;
+
+    for (let i = 0; i < n; i++) {
+      const r = lerp(HEAT_VENT.radius[0], HEAT_VENT.radius[1], rng());
+      const h = lerp(HEAT_VENT.height[0], HEAT_VENT.height[1], rng());
+      // 顶端落在 top 之下、底端不越出本图最深点
+      const room = Math.max(1, maxD - HEAT_VENT.top - h);
+      const y1 = WORLD.surfaceY - (HEAT_VENT.top + rng() * room);
+      const y0 = y1 - h;
+      const x = (rng() - 0.5) * spanX * 0.84;
+
+      const mesh = new THREE.Group();
+      // 柱心的两条亮线 —— 让"柱"有边界感，不然只是一片雾
+      for (const sx of [-1, 1]) {
+        const line = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.7, h),
+          new THREE.MeshBasicMaterial({
+            color: 0xffd08a, transparent: true, opacity: 0.34,
+            depthWrite: false, blending: THREE.AdditiveBlending,
+          }),
+        );
+        line.position.x = sx * r * 0.74;
+        mesh.add(line);
+      }
+      // 柱体：一层很薄的暖色雾（宽度就是判定宽度，玩家看到的边界 = 生效的边界）
+      const col = new THREE.Mesh(
+        new THREE.PlaneGeometry(r * 2, h),
+        new THREE.MeshBasicMaterial({
+          color: 0xffa040, transparent: true, opacity: 0.13,
+          depthWrite: false, blending: THREE.AdditiveBlending,
+        }),
+      );
+      mesh.add(col);
+      mesh.position.set(x, (y0 + y1) / 2, 3);
+      this.ventRoot.add(mesh);
+      this.vents.push({ mesh, x, r, y0, y1 });
+    }
+  }
+
+  /**
+   * 热泉柱的碰撞体（game.js 只读这个，不碰 mesh 细节 —— 和浮冰同一个约定）。
+   * ⚠ 和浮冰不同，热泉是**区间**判定（`x ± r` 且 `y0 ≤ y ≤ y1`），不是一个圆：
+   *   它是一根竖直的柱子，玩家"经过"它是靠上升时穿过那一段高度。
+   */
+  get heatVentColliders() { return this.ventRoot && this.ventRoot.visible ? this.vents : null; }
+
+  // ── 沉船格子（批 8，废弃沉船专属）─────────────────────────
+  /**
+   * 残骸的空腔：一个**空心矩形框**（四条边框 + 里面几乎全空）。
+   *
+   * ⚠ 画成框而不是实心方块：格子内部必须是**空的**（玩家要看见里面），
+   *   边框只是给出"这里是安全的"的边界感。实心的话就变成一堵墙了。
+   * ⚠ 横向很窄（26~46）是刻意的 —— 那是这个机制的**代价**，不是偷懒。
+   */
+  buildWreckCells(on) {
+    if (!this.wreckRoot) {
+      this.wreckRoot = new THREE.Group();
+      this.wreckRoot.visible = false;
+      this.scene.add(this.wreckRoot);
+      this.wreckCells = [];
+    }
+    for (const c of this.wreckCells) this.wreckRoot.remove(c.mesh);
+    this.wreckCells = [];
+    if (!on) { this.wreckRoot.visible = false; return; }
+    this.wreckRoot.visible = true;
+
+    let seed = 20260920;
+    const rng = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    const n = Math.round(lerp(WRECK_CELL.count[0], WRECK_CELL.count[1], rng()));
+    const maxD = this.map ? mapMaxDepth(this.map) : 1800;
+    const spanX = WORLD.fishHalfWidth * WRECK_CELL.margin;
+
+    for (let i = 0; i < n; i++) {
+      const w = lerp(WRECK_CELL.w[0], WRECK_CELL.w[1], rng());
+      const h = lerp(WRECK_CELL.h[0], WRECK_CELL.h[1], rng());
+      const room = Math.max(1, maxD - WRECK_CELL.top - h);
+      const y1 = WORLD.surfaceY - (WRECK_CELL.top + rng() * room);
+      const y0 = y1 - h;
+      const x = (rng() - 0.5) * spanX * 2;
+
+      const mesh = new THREE.Group();
+      const bar = (bw, bh, bx, by) => {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshBasicMaterial({
+          color: 0x9fd06a, transparent: true, opacity: 0.30,
+          depthWrite: false, blending: THREE.AdditiveBlending,
+        }));
+        m.position.set(bx, by, 0);
+        mesh.add(m);
+      };
+      const T = 2.4;
+      bar(w, T, 0, h / 2);
+      bar(w, T, 0, -h / 2);
+      bar(T, h, -w / 2, 0);
+      bar(T, h, w / 2, 0);
+      mesh.position.set(x, (y0 + y1) / 2, 3);
+      this.wreckRoot.add(mesh);
+      this.wreckCells.push({ mesh, x, w, y0, y1 });
+    }
+  }
+
+  /**
+   * 格子的碰撞体（game.js 只读这个）。
+   * ⚠ 和热泉一样是**区间**判定，但只有"在里面"一种状态（热泉给的是倍率）。
+   */  get wreckCellColliders() { return this.wreckRoot && this.wreckRoot.visible ? this.wreckCells : null; }
+
   /**
    * 换到某张地图：把「这片海长什么样」一次性刷成新主题。
    *
@@ -844,8 +1016,35 @@ export class World {
     // ⑤ 浮冰：只有带 hook = 'iceberg' 的地图才有
     this.buildIcebergs(!!map && map.hook === 'iceberg');
 
-    // ⑥ 海床 + 宝箱（v0.7）：只有 `SEABED.map` 那张图有（首图）
-    if (this.seabedRoot) this.seabedRoot.visible = !!map && map.id === SEABED.map;
+    // ⑤b 热泉柱（批 4）：只有带 hook = 'vent' 的地图才有（熔岩海沟）
+    this.buildHeatVents(!!map && map.hook === 'vent');
+
+    // ⑤c 沉船格子（批 8）：只有带 hook = 'wreck' 的地图才有（废弃沉船）
+    this.buildWreckCells(!!map && map.hook === 'wreck');
+
+    // ⑥ 海床 + 宝箱（v0.7 / v0.8）：**每张"后面还有图"的地图**底部都有一只。
+    //
+    // ⚠ 整组建在**局部 y = 0**，这里把它挪到本图的最低点 —— 见 `_buildSeabed`。
+    //   按图写死 y 的话，加第二张有海床的图就得重建一整组 mesh。
+    // ⚠ 判定"本图有没有海床"用的是 `chartFrom(map.id)`（**不是**硬编码的 map id）：
+    //   它问的是"这张图的箱子里装的是哪张海图"，见 config 的 CHARTS。
+    const chartHere = map ? chartFrom(map.id) : null;
+    if (this.seabedRoot) {
+      this.seabedRoot.visible = !!chartHere;
+      if (chartHere) {
+        const depth = mapMaxDepth(map) + SEABED.margin;
+        this.seabedRoot.position.y = -depth;
+        // 配色跟着地图主题走（温带灰蓝 / 极地冰蓝）—— 不换的话极地的海床会显得脏。
+        const sb = theme.seabed || {};
+        this._seabedFloorMat.color.setHex(sb.floor != null ? sb.floor : 0x2b3841);
+        this._seabedRockMat.color.setHex(sb.rock != null ? sb.rock : 0x39464f);
+        this._chestGoldMat.color.setHex(chartHere.glow);
+        if (this._chestGlowSprite) this._chestGlowSprite.material.color.setHex(chartHere.glow);
+        // ⚠ 碰撞体是**世界坐标**（game 只读它），所以要跟着整组一起挪。
+        //   不挪的话：箱子画在极地 1240m，判定还在首图 860m。
+        this.chestAt = { x: CHEST.x, y: -depth + CHEST.h * 0.7, r: CHEST.w * 0.5 };
+      }
+    }
   }
 
   /** 浮冰的碰撞体（game.js 只读这个，不碰 mesh 细节） */
@@ -1461,24 +1660,31 @@ export class World {
   // 而"尽头"必须**看得见**才算一个目标 —— 一片虚空里放个宝箱，玩家不知道自己已经到了。
   // 所以这里铺一层实体地面 + 石头 + 一只发光的箱子：潜到底那一刻有东西可看、可拿。
   //
-  // ⚠ 海床只在 `SEABED.map` 那张图上显示（见 applyMap），冰封极地那边暂时没有。
+  // ⚠ v0.8：海床出现在**每一张"后面还有图"的地图**上（由 `chartFrom(map.id)` 决定），
+  //   不再是首图专属 —— 冰封极地的底部现在也有（箱里是熔岩海图）。
+  //   整组建在局部 y = 0，位置 / 配色由 `applyMap` 按当前地图设。
   // ─────────────────────────────────────────────────────────
   _buildSeabed() {
-    const map = mapById(SEABED.map);
-    const depth = mapMaxDepth(map) + SEABED.margin;
     const half = WORLD.playHalfWidth + 10;
 
     this.seabedRoot = new THREE.Group();
     this.seabedRoot.visible = false;      // 由 applyMap 按当前地图决定
     this.scene.add(this.seabedRoot);
 
+    // ⚠⚠ 整组建在**局部 y = 0**（语义 = "本图最低点"），由 `applyMap` 把它挪到正确深度。
+    //   按图写死 y 的话，加第二张有海床的图就得重建一整组 mesh。
+    //   材质也提到 `this` 上 —— applyMap 按 `theme.seabed` 换色（温带灰蓝 / 极地冰蓝）。
+    this._seabedFloorMat = toonMat({ color: 0x2b3841, flatShading: true });
+    this._seabedRockMat = toonMat({ color: 0x39464f, flatShading: true });
+    this._chestGoldMat = toonMat({ color: 0xffcc33, flatShading: true });
+
     // 地面：一块厚板 —— 用 Box 而不是 Plane：正交视角下厚板才有"厚度感"，
     // 而且它同时挡住了下面本该空无一物的地方。
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(half * 2, 12, 4),
-      toonMat({ color: 0x2b3841, flatShading: true }),
+      this._seabedFloorMat,
     );
-    floor.position.set(0, -depth, 0);
+    floor.position.set(0, 0, 0);
     this.seabedRoot.add(floor);
 
     let seed = 20260917;
@@ -1488,10 +1694,10 @@ export class World {
     };
 
     // 石头：纯装饰，但"地面"上得有东西才像地面（不然就是一条灰板）
-    const rockMat = toonMat({ color: 0x39464f, flatShading: true });
+    const rockMat = this._seabedRockMat;
     for (let i = 0; i < SEABED.rocks; i++) {
       const r = new THREE.Mesh(new THREE.DodecahedronGeometry(3 + rng() * 6, 0), rockMat);
-      r.position.set((rng() - 0.5) * half * 1.9, -depth - 1.5 - rng() * 3.5, 0);
+      r.position.set((rng() - 0.5) * half * 1.9, -1.5 - rng() * 3.5, 0);
       r.rotation.set(rng() * 3, rng() * 3, rng() * 3);
       this.seabedRoot.add(r);
     }
@@ -1499,7 +1705,7 @@ export class World {
     // 宝箱：木箱 + 金盖 + 两道金箍 + 底下的光晕（深海很暗，不发光根本看不见）
     const chest = new THREE.Group();
     const woodMat = toonMat({ color: 0x7a5230, flatShading: true });
-    const goldMat = toonMat({ color: CHEST.glow, flatShading: true });
+    const goldMat = this._chestGoldMat;
     chest.add(new THREE.Mesh(new THREE.BoxGeometry(CHEST.w, CHEST.h, CHEST.d), woodMat));
     const lid = new THREE.Mesh(
       new THREE.BoxGeometry(CHEST.w * 1.06, CHEST.h * 0.42, CHEST.d * 1.06), goldMat,
@@ -1514,17 +1720,19 @@ export class World {
       chest.add(band);
     }
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: this.glowTex, color: CHEST.glow, transparent: true, opacity: 0.55,
+      map: this.glowTex, color: 0xffcc33, transparent: true, opacity: 0.55,
       depthWrite: false, blending: THREE.AdditiveBlending,
     }));
     glow.scale.set(40, 40, 1);
     chest.add(glow);
-    chest.position.set(CHEST.x, -depth + CHEST.h * 0.7, 0);
+    this._chestGlowSprite = glow;
+    chest.position.set(CHEST.x, CHEST.h * 0.7, 0);
     this.seabedRoot.add(chest);
 
     this.chest = chest;
-    // 碰撞体：给 game 用的纯数据（世界层不暴露 mesh 细节，和浮冰同一个约定）
-    this.chestAt = { x: chest.position.x, y: chest.position.y, r: CHEST.w * 0.5 };
+    // 碰撞体：给 game 用的纯数据（世界层不暴露 mesh 细节，和浮冰同一个约定）。
+    // ⚠ 这里先给"局部坐标"的值，applyMap 会按当前地图换算成世界坐标。
+    this.chestAt = { x: CHEST.x, y: CHEST.h * 0.7, r: CHEST.w * 0.5 };
   }
 
   /** 宝箱的显隐（捡到之后收起来，见 game 的 `_getChart`） */
@@ -1670,17 +1878,119 @@ export class World {
   // ── 特效入口 ─────────────────────────────────────────────
   addShake(amount) { this.shake = Math.min(this.shake + amount, 30); }
 
+  /**
+   * 金币**喷泉**（批 6 特效 #2）：
+   * 窄锥向上喷 → 受重力回落 → **落回水面弹一次**。
+   *
+   * ⚠ 原来是全向随机散开（）。改成喷泉之后"收钱"这个动作
+   *   自己就有节奏（喷起 → 散开 → 落下 → 弹一下），而不是一团粒子炸开就没了。
+   * ⚠ 弹跳面用 （喷泉的起点 = 鱼的位置），不是水面 —— 鱼在水下时金币
+   *   应该落在"鱼身上"那一层弹，而不是穿过整片海落到水面。
+   */
   burstCoins(x, y, n = 8) {
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 40 + Math.random() * 130;
+      // 窄锥：±38°，让金币是"喷"上去而不是"炸"开
+      const a = (Math.random() - 0.5) * 1.33;
+      const sp = 90 + Math.random() * 110;
       this.coins.spawn({
         x, y, z: 2 + Math.random() * 4,
-        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp + 40,
-        g: -280, life: 0.7 + Math.random() * 0.6,
-        scale: 0.7 + Math.random() * 0.8, spin: (Math.random() - 0.5) * 22, drag: 0.9,
+        vx: Math.sin(a) * sp * 0.55, vy: Math.cos(a) * sp,
+        g: -420, life: 0.9 + Math.random() * 0.7,
+        scale: 0.7 + Math.random() * 0.8, spin: (Math.random() - 0.5) * 22, drag: 0.35,
+        bounce: 1, bounceY: y,
       });
     }
+  }
+
+  /**
+   * 冲击波环（批 6 特效 #5）：一圈**快速扩张 + 淡出**的环，画在所有爆炸上。
+   *
+   * ⚠ 所有"环"类特效（冲击波 / 声波 / 热泉脉冲）**复用同一个几何体** ——
+   *   靠颜色和缩放区分。每加一个效果就建一份 geometry 的话，
+   *   光 geometry 就能把内存吃光（EXPANSION §8.3 的硬约束）。
+   */
+  burstRing(x, y, radius, color = 0xffd08a) {
+    if (!this.rings) this._buildRings();
+    const r = this.rings[this.ringCursor];
+    this.ringCursor = (this.ringCursor + 1) % this.rings.length;
+    r.mesh.position.set(x, y, 6);
+    r.mesh.material.color.setHex(color);
+    r.mesh.material.opacity = 0.85;
+    r.mesh.scale.setScalar(radius * 0.22);
+    r.mesh.visible = true;
+    r.active = true;
+    r.life = 0.34;
+    r.maxLife = 0.34;
+    r.target = radius;
+  }
+
+  _buildRings() {
+    // 一个细圆环（内径 0.86、外径 1）—— 缩放它就是冲击波的直径
+    const geo = shRing();
+    this.rings = [];
+    this.ringCursor = 0;
+    for (let i = 0; i < 10; i++) {
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: 0xffd08a, transparent: true, opacity: 0, side: THREE.DoubleSide,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+      }));
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.rings.push({ mesh, active: false, life: 0, maxLife: 1, target: 1 });
+    }
+  }
+
+  _updateRings(dt) {
+    if (!this.rings) return;
+    for (const r of this.rings) {
+      if (!r.active) continue;
+      r.life -= dt;
+      if (r.life <= 0) { r.active = false; r.mesh.visible = false; continue; }
+      const t = 1 - r.life / r.maxLife;              // 0 → 1
+      // 扩张用 ease-out（一开始快、后面慢）—— 那才是冲击波的样子
+      const k = 1 - (1 - t) * (1 - t);
+      r.mesh.scale.setScalar(r.target * (0.22 + 0.78 * k));
+      r.mesh.material.opacity = 0.85 * (1 - t);
+    }
+  }
+
+  /**
+   * 特殊状态的**视觉**（批 6 特效 #9）：带电 = 蓝白电弧 / 冰冻 = 淡蓝霜晶 /
+   * 灼热 = 橙色余烬 / 幻影 = 半透明残影（残影在 `fish.js` 里，这里只补前三样）。
+   *
+   * ⚠ 没有视觉反馈的状态等于不存在 —— 玩家不会知道自己中了什么（EXPANSION §5.3）。
+   */
+  burstTrait(x, y, trait) {
+    const P = {
+      charged: { n: 16, spread: 20, color: 0xa8e8ff, kind: 'spark' },
+      frozen: { n: 14, spread: 24, color: 0xcfeaff, kind: 'chunk' },
+      burning: { n: 18, spread: 22, color: 0xff8a30, kind: 'spark' },
+    }[trait];
+    if (!P) return;
+    if (P.kind === 'chunk') {
+      for (let i = 0; i < P.n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        this.chunks.spawn({
+          x: x + (Math.random() - 0.5) * P.spread, y: y + (Math.random() - 0.5) * P.spread, z: 2,
+          vx: Math.cos(a) * 60, vy: Math.sin(a) * 60 + 30, g: -160,
+          life: 0.7 + Math.random() * 0.5, scale: 0.5 + Math.random() * 0.7,
+          spin: (Math.random() - 0.5) * 14, drag: 1.2,
+        });
+      }
+      this.burstRing(x, y, 34, P.color);
+      return;
+    }
+    for (let i = 0; i < P.n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 70 + Math.random() * 130;
+      this.sparks.spawn({
+        x, y, z: 3 + Math.random() * 3,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        g: -120, life: 0.28 + Math.random() * 0.3,
+        scale: 0.5 + Math.random() * 0.6, drag: 2.4,
+      });
+    }
+    this.burstRing(x, y, 30, P.color);
   }
 
   burstBubbles(x, y, n = 10, spread = 14) {
@@ -1735,6 +2045,8 @@ export class World {
    * @param {number} radius 世界单位，和伤害判定半径一致，做到"看到多大就炸多大"
    */
   burstExplosion(x, y, radius) {
+    // 冲击波环（批 6 特效 #5）：**所有**爆炸都从这里走，所以只加这一处。
+    this.burstRing(x, y, radius * 1.5);
     this.blasts.spawn(x, y, radius);
     this.burstSparks(x, y, 22, Math.max(0.8, radius / 26));
     this.burstChunks(x, y, 12);
@@ -1924,6 +2236,7 @@ export class World {
 
     this.coins.update(dt);
     this.bubbles.update(dt);
+    this._updateRings(dt);
     this.sparks.update(dt);
     this.chunks.update(dt);
     this.blasts.update(dt);

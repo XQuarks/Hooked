@@ -74,6 +74,16 @@ check('A4 zoneAtDepth 按地图隔离（同一深度在两张图返回不同海�
   && zoneAtDepth(-700, 'polar').id === 'ice-abyss' && zoneAtDepth(-700, 'calm-bay').id === 'trench',
   `−30m：${zoneAtDepth(-30, 'calm-bay').nick} / ${zoneAtDepth(-30, 'polar').nick}`);
 
+// B4：`mapId` 没有默认值 —— 忘传 / 传脏 id 必须**立刻抛错**，
+// 而不是静默退回第一张图（那会变成"极地的 30m 查到阳光浅滩"，不报错、不闪退）。
+// ⚠ 这条断言在旧实现（`mapId = DEFAULT_MAP.id`）下必挂 —— 它就是这个 bug 的验收。
+const throwOf = (fn) => { try { fn(); return null; } catch (e) { return String((e && e.message) || e); } };
+const eNoMap = throwOf(() => zoneAtDepth(-30));
+const eBadMap = throwOf(() => zoneAtDepth(-30, 'no-such-map'));
+check('A4b zoneAtDepth 的 mapId 是必传的：不传 / 传脏 id 都显式抛错（B4）',
+  !!eNoMap && !!eBadMap && /zoneAtDepth/.test(eNoMap) && /zoneAtDepth/.test(eBadMap),
+  `不传 → ${eNoMap ? '抛错' : '⚠ 静默返回了 ' + zoneAtDepth(-30).nick} · 脏 id → ${eBadMap ? '抛错' : '⚠ 静默返回了'}`);
+
 const rSum = RARITY.reduce((a, r) => a + r.p, 0);
 check('A5 稀有度概率和 = 1、倍率严格递增、非普通档都有描边色',
   Math.abs(rSum - 1) < 1e-9
@@ -130,15 +140,19 @@ check('A11 没有跨地图的鱼种（zones 必须全在同一张图里）',
 
 const bossBad = MAPS.filter((m) => {
   const mine = SPECIES.filter((s) => s.zones.some((z) => m.zones.includes(z)));
-  const bosses = mine.filter((s) => s.boss);
+  // ⚠ 终章 Boss（`final: true`）**单独算** —— 它和本图的常规 Boss 共存是设计，
+  //   两者靠**触发深度**分层（终章更深），不会在同一竿里同时出现。
+  const bosses = mine.filter((s) => s.boss && !s.final);
+  const finals = mine.filter((s) => s.boss && s.final);
   // Boss 必须 elite:false —— 它本身已经是"稀有"，再叠金色描边会让"金色"这个信号贬值
-  return bosses.length !== 1 || bosses[0].elite !== false;
+  return bosses.length !== 1 || bosses[0].elite !== false || finals.length > 1;
 });
-check('A12 每张图恰好一个 Boss，且 Boss 不参与稀有度抽签（elite === false）',
+check('A12 每张图恰好一个**常规** Boss（终章另算），且 Boss 不参与稀有度抽签（elite === false）',
   bossBad.length === 0,
   MAPS.map((m) => {
-    const b = SPECIES.filter((s) => s.zones.some((z) => m.zones.includes(z)) && s.boss)[0];
-    return b ? `${m.name}:${b.name}` : `${m.name}:无`;
+    const b = SPECIES.filter((s) => s.zones.some((z) => m.zones.includes(z)) && s.boss && !s.final)[0];
+    const fin = SPECIES.filter((s) => s.zones.some((z) => m.zones.includes(z)) && s.final)[0];
+    return `${m.name}:${b ? b.name : '无'}${fin ? ' + 终章' + fin.name : ''}`;
   }).join(' · '));
 
 // 越深越值钱：每层的最高身价必须高于上一层，否则"往下走"没有回报
@@ -285,7 +299,7 @@ try {
   const b3 = J(await ev(`JSON.stringify((()=>{const g=window.__game;
     g.save.licenses = []; g.save.codex = {}; g.save.mapBest = {}; g.save.coins = 999999;
     // v0.7：门槛 = 海图 + 船。这里两条都没有 → 必须进不去。
-    g.save.chart = false; g.save.boats = { owned: [], current: null };
+    g.save.charts = {}; g.save.boats = { owned: [], current: null };
     const ok = g.buyMap('polar');
     const p = g.mapProgress(window.__cfg.mapById('polar'));
     return { ok, cur: g.save.currentMap, coins: g.save.coins, lic: g.save.licenses.length,
@@ -301,7 +315,7 @@ try {
     const polar = cfg.mapById('polar');
     g.save.codex = {};
     // v0.7：门槛 = **海图 + 一艘船**（两条都给上 → 必须能进）
-    g.save.chart = true;
+    g.save.charts = { polar: true };
     g.save.boats = { owned: ['golden'], current: 'golden' };
     g.save.mapBest = { polar: cfg.mapMaxDepth(polar) };
     g.save.coins = 40000;
@@ -329,10 +343,10 @@ try {
   const b4b = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
     const polar = cfg.mapById('polar');
     const snap = { coins: g.save.coins, lic: g.save.licenses.slice(), cur: g.save.currentMap,
-      chart: g.save.chart, boats: g.save.boats };
+      charts: g.save.charts, boats: g.save.boats };
     // **只有海图、没有船** → 依然进不去（两条必须同时满足）
     g.save.licenses = []; g.save.currentMap = 'calm-bay';
-    g.save.chart = true; g.save.boats = { owned: [], current: null };
+    g.save.charts = { polar: true }; g.save.boats = { owned: [], current: null };
     g.save.mapBest = { polar: cfg.mapMaxDepth(polar) };
     g.save.coins = 40000;
     const p = g.mapProgress(polar);
@@ -343,7 +357,7 @@ try {
     // 还原现场（后面所有 B 组断言都要求"人在极地"）
     // ⚠ chart / boats 也要还回去 —— 它们现在是门槛本身，不还的话 enterMap 会被拦下，
     //   后面五条 B 组断言全部跑到"宁静海湾"上去了。
-    g.save.chart = snap.chart; g.save.boats = snap.boats;
+    g.save.charts = snap.charts; g.save.boats = snap.boats;
     g.save.coins = snap.coins; g.save.licenses = snap.lic; g.enterMap(snap.cur);
     out.restored = { cur: g.save.currentMap, coins: g.save.coins };
     return out;})())`));
@@ -358,12 +372,12 @@ try {
   // 并且如果船厂还没被介绍过，**直接解锁**（需求原话："若是玩家没有解锁船厂 App
   // 则直接给玩家解锁，并去掉船厂 NPC 引导"）。
   const chartGot = J(await ev(`JSON.stringify((()=>{const g=window.__game;
-    g.save.chart = false; g.save.boatApp = false;
+    g.save.charts = {}; g.save.boatApp = false;
     g.save.boats = { owned: [], current: null };
     g.save.licenses = []; g.enterMap('calm-bay');
     const at = g.world.chestAt;
     const before = { seabed: g.world.seabedRoot.visible, chest: g.world.chest.visible,
-      chart: g.save.chart, boatApp: g.save.boatApp,
+      chart: !!g.save.charts.polar, boatApp: g.save.boatApp,
       depth: at ? Math.round(at.y) : null, x: at ? Math.round(at.x) : null };
     const coins0 = g.save.coins;
     // 出图：把镜头挪到海底看宝箱（不然截图里只有水面）
@@ -373,37 +387,42 @@ try {
     // 把钩子放到宝箱上，走一次碰撞检查
     g.hook.setPosition(at.x, at.y); g.hook.x = at.x; g.hook.y = at.y;
     g._checkChest(at.x, at.y);
-    // 换到极地看看海床收起来没有，再换回来
+    // 换到极地看看海床：⚠ v0.8（批 4）起极地**也有**海床了 ——
+    //   它底下那只箱子装的是**熔岩海图**（第 3 张图的门槛），不再是"极地没有海床"。
     // ⚠ 必须先给一艘船：enterMap 也要过门槛，不然这一步会被拦下，
-    //   "海床在极地不显示"就变成了假通过（其实人还在首图）。
+    //   后面的判定就变成了假通过（其实人还在首图）。
     g.save.boats = { owned: ['golden'], current: 'golden' };
     g.enterMap('polar');
     const inIce = g.world.seabedRoot.visible;
+    const inIceChest = g.world.chest.visible;
+    const inIceDepth = g.world.chestAt ? Math.round(g.world.chestAt.y) : null;
     g.enterMap('calm-bay');
     // ⚠ 出图时把镜头开到了海底，这里必须**带回水面** —— 后面 B5+ 全部要看"待机视野"
     //   （不还原的话 B7b 的极光断言会以海底视野去判断，报"0 条相交"）。
     g.showIdle();
     for (let i = 0; i < 90; i++) window.step(1);
-    return { before, inIce, backSeabed: g.world.seabedRoot.visible,
-      chart: g.save.chart, boatApp: g.save.boatApp, chest: g.world.chest.visible,
+    return { before, inIce, inIceChest, inIceDepth, backSeabed: g.world.seabedRoot.visible,
+      chart: !!g.save.charts.polar, boatApp: g.save.boatApp, chest: g.world.chest.visible,
       coins: g.save.coins - coins0 };})())`));
   await shot('B13-chart-call');   // 拍的是「钓到海图后老陈来电」的现场（相机已回水面）
-  check('B13 首图海床上的宝箱：碰到即得海图 + 直接解锁船厂 + 宝箱收起 + 海床只在首图',
+  check('B13 首图海床上的宝箱：碰到即得海图 + 直接解锁船厂 + 宝箱收起；极地那只箱子还在（熔岩海图）',
     chartGot.before.seabed === true && chartGot.before.chest === true
     && chartGot.before.chart === false && chartGot.before.boatApp === false
     && chartGot.before.depth <= -860
     && chartGot.chart === true && chartGot.boatApp === true && chartGot.chest === false
-    && chartGot.coins > 0 && chartGot.inIce === false && chartGot.backSeabed === true,
+    && chartGot.coins > 0
+    && chartGot.inIce === true && chartGot.inIceChest === true && chartGot.inIceDepth <= -1240
+    && chartGot.backSeabed === true,
     `宝箱在 ${chartGot.before.x}, ${chartGot.before.depth}m · 海图${chartGot.before.chart}→${chartGot.chart}`
     + ` · 船厂${chartGot.before.boatApp}→${chartGot.boatApp} · 开箱+${chartGot.coins}`
-    + ` · 海床：首图${chartGot.before.seabed}/极地${chartGot.inIce}/回来${chartGot.backSeabed}`);
+    + ` · 海床：首图${chartGot.before.seabed}／极地${chartGot.inIce}(箱${chartGot.inIceChest}@${chartGot.inIceDepth}m)／回来${chartGot.backSeabed}`);
 
   // ── B14 船厂：三条船同价、效果各一、买船才进得了极地（v0.7）──
   const boatRes = J(await ev(`JSON.stringify((()=>{const g=window.__game; const cfg=window.__cfg;
     const prices = cfg.BOATS.map(b=>b.price);
     const kinds = cfg.BOATS.map(b=>b.effect.kind);
     g.save.boats = { owned: [], current: null };
-    g.save.chart = true; g.save.coins = 100000;
+    g.save.charts = { polar: true }; g.save.coins = 100000;
     // ① 没船 → 进不去
     g.save.currentMap = 'calm-bay';
     const noBoat = g.buyMap('polar');
@@ -827,7 +846,7 @@ try {
     g.save.codex = {}; g.save.mapBest = {};
     // ⚠ v0.7：门槛是"海图 + 船"，所以退条件要**连这两样一起清掉** ——
     //   只清 licenses 的话 B 组留下的海图 / 船会让极地那张卡变成"已解锁"，F3 会空过。
-    g.save.chart = false; g.save.boats = { owned: [], current: null };
+    g.save.charts = {}; g.save.boats = { owned: [], current: null };
     g.save.coins = 500; g.showIdle(); g.openPhone(); g.ui.openApp('route'); return 'ok';})()`);
   await rafWait(400);
   const f1 = J(await readRoute());
@@ -838,8 +857,8 @@ try {
   check('F2 当前所在的那张图标成「当前所在」且按钮不可点',
     f1.curName === '宁静海湾' && f1.curBtn === '当前所在' && f1.curDisabled === true,
     `${f1.curName} · 「${f1.curBtn}」disabled=${f1.curDisabled}`);
-  check('F3 还没解锁的那张图列出两个条件（海图 / 船），按钮是灰的',
-    f1.lockedN === 1 && f1.lockedName === '冰封极地' && f1.conds.length === 2
+  check('F3 还没解锁的每一张图各列出两个条件（海图 / 船），按钮是灰的',
+    f1.lockedN === MAPS.length - 1 && f1.lockedName === '冰封极地' && f1.conds.length === 2
     && f1.lockedBtn === '条件未满'
     && f1.conds.some((c) => /海图|宝箱/.test(c)) && f1.conds.some((c) => /船/.test(c)),
     `${f1.lockedName} · ${JSON.stringify(f1.conds)} · 按钮「${f1.lockedBtn}」`);
@@ -849,12 +868,12 @@ try {
   // 再看"已经买下并在其中"的状态：那张图应该没有条件行，只留「当前所在」
   await ev(`(()=>{const g=window.__game; const cfg=window.__cfg;
     g.save.licenses = ['polar']; g.save.currentMap = 'polar';
-    g.save.chart = true; g.save.boats = { owned: ['golden'], current: 'golden' };
+    g.save.charts = { polar: true }; g.save.boats = { owned: ['golden'], current: 'golden' };
     g.ui.setMap(cfg.mapById('polar')); g.ui.refreshApp(); return 'ok';})()`);
   await rafWait(300);
   const f1b = J(await readRoute());
-  check('F5 已买下的图不再显示条件行（条件已经没意义了），也没有卡是灰的',
-    f1b.curName === '冰封极地' && f1b.lockedN === 0 && f1b.curCondRows === 0,
+  check('F5 当前那张图不再显示条件行（条件已经没意义了）—— 只有更后面的图还是灰的',
+    f1b.curName === '冰封极地' && f1b.lockedN === MAPS.length - 2 && f1b.curCondRows === 0,
     `当前 ${f1b.curName} · 未解锁卡 ${f1b.lockedN} 张 · 当前卡条件行 ${f1b.curCondRows}`);
 
   await ev(`(()=>{ window.__game.ui.showPhoneHome(); return 'ok';})()`);
@@ -873,8 +892,10 @@ try {
     return { n: apps.length, ids: apps.map(a=>a.dataset.app), grid, widest, overflow: right - gridRight,
       boatApp: window.__game.save.boatApp,
       depth: w && w.textContent, sub, title: document.querySelector('#pHome .p-w-name').textContent };})())`));
-  check('F6 桌面 App 数 = 已解锁的个数（本图跑完时船厂已解锁 → 7 个），地图小部件显示的是当前这张图',
-    f5.n === (f5.boatApp ? 7 : 6) && f5.ids.length === f5.n && f5.grid === 4
+  // ⚠ 批 5 加了两个**常驻** App（短信 / 电台），所以基数是 8 而不是 6 ——
+  //   它们不靠剧情解锁，一开始就在桌面上。
+  check('F6 桌面 App 数 = 常驻 8 个 + 已解锁的船厂（本图跑完时已解锁 → 9 个），地图小部件显示的是当前这张图',
+    f5.n === (f5.boatApp ? 9 : 8) && f5.ids.length === f5.n && f5.grid === 4
     && f5.overflow <= 0
     && f5.title === '冰封极地' && /本图最深/.test(f5.depth || '')
     && f5.sub.some((s) => /1240m/.test(s)),

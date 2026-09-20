@@ -71,9 +71,42 @@ await ev(`(()=>{const g=window.__game; const cfg=window.__cfg;
   for (const k of cfg.UPGRADE_ORDER) g.save.levels[k] = 12;
   g.save.levels.lamp = 12; g.applyUpgrades(); return 'ok';})()`);
 
+// ⚠⚠ 出图要的是**干净的场景**，不是过场故事卡：`enterMap()` 会在首次进入某张图时
+//   盖一层「点击继续」的故事卡（`cutsceneFor()` 读 `save.seenCut`）。
+//   不先把它们标成"已看过"的话，截出来的 8 张图**全是过场**。
+//   （这个坑一直存在，只是 polar 那几张因为换图失败反而"躲过"了它 ——
+//     也就是这个脚本既拍错了海、又被过场盖住。）
+await ev(`(()=>{const g=window.__game; const cfg=window.__cfg;
+  g.save.seenCut = cfg.MAPS.map((m) => m.id);
+  return 'ok';})()`);
+
 // ── 1) 极地待机：船 + 天空 + 极光 ──
-await ev(`(()=>{const g=window.__game;
-  g.save.licenses = ['polar']; g.enterMap('polar'); g.showIdle(); return 'ok';})()`);
+// ⚠⚠ 换图钥匙 = **海图 + 船**。这里原先写的是 `g.save.licenses = ['polar']`，而
+//   **所有地图的 `license` 恒为 0** → `enterMap` 里那条许可证判定从来没生效过
+//   → 一直返回 `false`。也就是说这个脚本**从 v0.7 第二批起拍的就是宁静海湾**，
+//   只是文件名还叫 polar（出图脚本没有断言，所以没人发现 —— 又一个静默失效）。
+//   2026-09-20 修：按真实门槛给上海图 + 船，并**加两道会抛错的护栏**。
+await ev(`(()=>{const g=window.__game; const cfg=window.__cfg;
+  // ⚠ 出图要的是**干净场景**：来电卡和「枪店 · 新货上架」横幅正好**盖在要复核的极光 / 冰柱上**
+  //   （第一版截出来顶部就是一条横幅）。两步都要做：
+  //   ① 把**来源**掐掉（所有电话标记已听 / 所有枪标记已播报）—— 必须赶在 enterMap 之前，
+  //      因为换图本身会触发 _syncGunNews()；
+  //   ② 清一遍 UI 队列里**已经排上**的（横幅是入队后由 pumpNews() 逐张渲染的，
+  //      只清 save 里的 gunNews 拦不住它）。
+  //   ⚠ 这段注释在**模板字符串内部** —— 里面一个反引号都不能有，会提前把它闭合。
+  g.save.calls = cfg.CALLS.map((c) => c.id);
+  g.ringingCall = null;
+  g.save.gunAnnounced = cfg.GUN_ORDER.slice();
+  g.save.gunNews = [];
+  g.save.charts = { polar: true };
+  g.save.boats = { owned: [cfg.BOAT_ORDER[0]], current: cfg.BOAT_ORDER[0] };
+  if (!g.enterMap('polar')) throw new Error('enterMap(polar) 被换图门槛拦下了 —— 出图会拍到错的海');
+  if (g.save.currentMap !== 'polar') throw new Error('换图没生效，当前图 = ' + g.save.currentMap);
+  g.ui._newsQueue.length = 0;
+  g.ui._newsShowing = false;
+  clearTimeout(g.ui._newsT);
+  g.ui.el.newsBanner.classList.remove('on');
+  g.showIdle(); return 'ok';})()`);
 await ev('window.step(40)');
 await shot('01-polar-idle');
 const auroraInfo = await ev(`JSON.stringify((()=>{const g=window.__game;

@@ -207,6 +207,18 @@ export const GLYPH = {
     <path d="M15.2 12c0-2.9-2.6-5-5.8-5-3.6 0-6.6 2.2-6.6 5s3 5 6.6 5c3.2 0 5.8-2.1 5.8-5Z"/>
     <path d="M16 12 22 8.4v7.2Z"/>
   </g><circle cx="6.6" cy="10.4" r="1.15" fill="#000" opacity="0.42"/>`,
+  // 耐压舱（升级项，批 4）：圆头罐体 + 顶部阀门 + 右侧两道压力弧。
+  // ⚠ 刻意**不用**"钢板 + 铆钉"那种造型 —— 加固 `rig`（已删）当年就是那么画的，
+  //   19px 下只剩一个带点的方块，读不出意思。**罐体的轮廓**才传得出"容器"。
+  //   右边那两道弧是它和 `battery`（方电池 + 右侧一个正极凸点）的唯一区别。
+  tank: `<g fill="currentColor">
+    <path fill-rule="evenodd" d="M10 3.4c3.4 0 5.8 2.3 5.8 5.6v6c0 3.3-2.4 5.6-5.8 5.6S4.2 18.3 4.2 15V9c0-3.3 2.4-5.6 5.8-5.6Zm0 2.2C7.9 5.6 6.4 7 6.4 9v6c0 2 1.5 3.4 3.6 3.4s3.6-1.4 3.6-3.4V9c0-2-1.5-3.4-3.6-3.4Z"/>
+    <rect x="8.6" y="1.2" width="2.8" height="2.4" rx="0.7"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.8">
+    <path d="M18.4 10.4a4.6 4.6 0 0 1 0 3.2"/>
+    <path d="M20.8 8.6a8 8 0 0 1 0 6.8"/>
+  </g>`,
   // 快速回收（绞盘，v0.5）：向上的双箭头 + 底下一段卷筒。
   // 双箭头是"加速"的通用形状语言，19px 下依然成立；
   // ⚠ 刻意和 `winch`（绞盘本身：卷筒 + 摇柄）区分开 —— 那个是"装备"，
@@ -240,7 +252,31 @@ export const GLYPH = {
   <path fill="currentColor" opacity="0.5"
     d="M3.2 9.6h17.6c-.6 6.1-4.1 10.2-8.8 10.2S3.8 15.7 3.2 9.6Z"/>`,
 
-  // ── 枪械（v0.4 枪店）────────────────────────────────────────
+  // ── 剧情（批 5）────────────────────────────────────────────
+  // 短信：一个**对话气泡**（圆角方 + 左下角的小尾巴）。
+  // ⚠ 刻意和 `call`（听筒）区分：那个是"有人打给你"，这个是"有人给你发了条消息"。
+  sms: `<g fill="currentColor">
+    <path fill-rule="evenodd" d="M4.6 3.6h14.8A2.6 2.6 0 0 1 22 6.2v8.4a2.6 2.6 0 0 1-2.6 2.6h-6.1l-4.5 3.9a.7.7 0 0 1-1.15-.53V17.2H4.6A2.6 2.6 0 0 1 2 14.6V6.2a2.6 2.6 0 0 1 2.6-2.6Zm.4 2.4v8.4h4.6v4l4.6-4h5.6V6Z"/>
+    <path d="M6.4 8.4h11.2v1.9H6.4Zm0 3.2h7.6v1.9H6.4Z" opacity="0.72"/>
+  </g>`,
+  // 电台：机身 + 扬声器格栅 + 旋钮 + 天线。19px 下靠"天线 + 一排格栅"认人。
+  radio: `<g fill="currentColor">
+    <path d="M4 8.6h16a1.6 1.6 0 0 1 1.6 1.6v9.2a1.6 1.6 0 0 1-1.6 1.6H4a1.6 1.6 0 0 1-1.6-1.6v-9.2A1.6 1.6 0 0 1 4 8.6Z"/>
+    <circle cx="7.6" cy="14.8" r="3.1" opacity="0.42"/>
+    <circle cx="16.6" cy="12.6" r="1.5" opacity="0.42"/>
+    <circle cx="16.6" cy="17.4" r="1.5" opacity="0.42"/>
+  </g>
+  <path d="M18.6 8.4 21.4 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
+  // 渔业协会：一张公文纸 + 右下角一枚公章（两道同心圆 = 印章，不用文字）
+  assoc: `<g fill="currentColor">
+    <path fill-rule="evenodd" d="M5.2 2.6h9.4l4.2 4.2v14.6a1.4 1.4 0 0 1-1.4 1.4H5.2a1.4 1.4 0 0 1-1.4-1.4V4a1.4 1.4 0 0 1 1.4-1.4Zm8.6 2.2v3h3Z"/>
+  </g>
+  <g fill="none" stroke="#000" stroke-width="0.9" opacity="0.3">
+    <path d="M6.6 9.6h6.2M6.6 12.2h6.2M6.6 14.8h4.2"/>
+  </g>
+  <circle cx="15.4" cy="17.6" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.85"/>
+  <circle cx="15.4" cy="17.6" r="1.6" fill="currentColor" opacity="0.85"/>`,
+
   //
   // 七把枪必须是**七种不同的剪影**，不能靠"多一根线"来区分：
   // 它们在 19px 的商店行里要一眼认出谁是谁，而 19px 下细节全部糊掉，
@@ -248,6 +284,17 @@ export const GLYPH = {
   //   手枪=短 + 斜握把 / 散弹=最长最细的枪管 + 前护木 / Uzi=枪身下挂一根长弹匣
   //   鱼叉=带倒钩的叉头 / 加特林=圆形弹鼓 + 双管 / 激光=发射口 + 淡色光束
   //   巴雷特=枪管上方一具瞄准镜 + 枪口制退器
+  //
+  // ⚠ 一律 `fill="currentColor"`（激光的光束用 opacity 压淡），不要写死颜色 ——
+  //   这些图标既出现在深色 App 图标底上，也出现在浅色的商店行里。
+  // ── 枪械（v0.4 枪店）────────────────────────────────────────
+  //
+  // 八把枪必须是**八种不同的剪影**，不能靠"多一根线"来区分：
+  // 它们在 19px 的商店行里要一眼认出谁是谁，而 19px 下细节全部糊掉，
+  // 只有"整体轮廓"能传递信息。所以每把枪都绑一个**夸张的特征**：
+  //   手枪=短 + 斜握把 / 散弹=最长最细的枪管 + 前护木 / Uzi=枪身下挂一根长弹匣
+  //   鱼叉=带倒钩的叉头 / 加特林=圆形弹鼓 + 双管 / 激光=发射口 + 淡色光束
+  //   榴弹=枪口挂着一颗大圆弹 / 巴雷特=枪管上方一具瞄准镜 + 枪口制退器
   //
   // ⚠ 一律 `fill="currentColor"`（激光的光束用 opacity 压淡），不要写死颜色 ——
   //   这些图标既出现在深色 App 图标底上，也出现在浅色的商店行里。
@@ -306,6 +353,17 @@ export const GLYPH = {
     <path d="M17.2 9.4h3.4v2.2h-3.4Z"/>
     <path d="M6.6 12.6h4l-1.8 7.2H5.2Z"/>
   </g>`,
+  // 榴弹枪（批 4）：短粗枪身 + **枪口挂着一颗大圆弹** + 上方一段抛射弧。
+  // 夸张特征 = "前端的圆球" —— 八把枪里唯一一个圆形在枪口的剪影，
+  // 19px 下比"多一根线"好认得多（八把枪必须八种轮廓，见上面的枪械说明）。
+  'gun-grenade': `<g fill="currentColor">
+    <path d="M3.6 9.6h10.8a1.4 1.4 0 0 1 1.4 1.4v3.4H3.6Z"/>
+    <circle cx="18.4" cy="12.4" r="4"/>
+    <path d="M5.6 14.4h3.6v5.4H5.6Z"/>
+    <path d="M10.6 14.4h2.8l-1 4.4h-1.8Z"/>
+  </g>
+  <path d="M8.8 7.4c3.2-2.8 7.2-3.4 10.8-1.8" fill="none"
+    stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="2.6 2.2" opacity="0.8"/>`,
 };
 
 /** 取一个单色图标（size 单位 px） */
@@ -319,9 +377,4 @@ export function glyph(name, size = 22, cls = '') {
  */
 export function iconText(name, text, size = 12, cls = '') {
   return `${glyph(name, size, cls)}<span>${text}</span>`;
-}
-
-/** 血量条：连着画 n 颗心（用 currentColor 上色，跟着容器的 color 走） */
-export function heartRow(n, size = 12) {
-  return Array.from({ length: n }, () => glyph('heart', size)).join('');
 }

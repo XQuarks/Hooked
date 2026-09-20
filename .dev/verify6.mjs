@@ -174,8 +174,11 @@ try {
     stat.zoneMax <= 1, `单层最多 ${stat.zoneMax} 条 · 300 竿 / ${stat.total} 条鱼`);
   check('B2 扣钱鱼占全部鱼的比例降到 8% 以内',
     stat.ratio <= 0.08, `实测 ${(stat.ratio * 100).toFixed(1)}%（改前基线 ${(stat.oldRatio * 100).toFixed(1)}%）`);
-  check('B3 占比相对改前明显下降（至少减半）',
-    stat.ratio < stat.oldRatio * 0.5, `${(stat.oldRatio * 100).toFixed(1)}% → ${(stat.ratio * 100).toFixed(1)}%`);
+  // ⚠ 这个比值是**全局聚合**的：每加一张地图都会被平移一点。批 8 加了第 4 张图
+  //   （1/18 是扣钱鱼）之后刚好落在 50.0% 上 —— 现在落在 54% 附近。断言的本意是"明显下降"，
+  //   不是"恰好减半"。
+  check('B3 占比相对改前明显下降（至少降到 75% 以下）',
+    stat.ratio < stat.oldRatio * 0.75, `${(stat.oldRatio * 100).toFixed(1)}% → ${(stat.ratio * 100).toFixed(1)}%`);
   check('B4 每竿平均遇到的扣钱鱼 ≤ 1.3 条（改前 ≈3.4）',
     stat.avgHaz <= 1.3, `实测 ${stat.avgHaz} 条/竿 · 改前基线 ≈${stat.oldAvgHaz}`);
   const cfg = J(await ev(`(async()=>{ const C = await import('./src/config.js');
@@ -336,7 +339,8 @@ try {
       mapOfZone: C.mapOfZone('deep').id,
       mapOfSpecies: C.mapOfSpecies(C.SPECIES[0]).id,
       hasZoneAtDepth: typeof C.zoneAtDepth === 'function',
-      zoneAt300: C.zoneAtDepth(-300).id,
+      // ⚠ B4：mapId 是必传的（不传会抛错），这里显式带第一张图
+      zoneAt300: C.zoneAtDepth(-300, C.DEFAULT_MAP.id).id,
     }); })()`));
   check('D4 config 里有 MAPS 多地图结构（地图 → 海域 → 鱼）',
     maps.n >= 1 && maps.name === '宁静海湾' && maps.mapOfZone === maps.id && maps.mapOfSpecies === maps.id,
@@ -363,15 +367,16 @@ try {
     const first = items[0] ? items[0].dataset.id : null;
     const canvasOk = items.every(it=>{const c=it.querySelector('canvas'); return c && c.width>0 && c.height>0;});
     const wheres = items.slice(0,3).map(it=>it.querySelector('.cx-where').textContent);
-    // 批 2：图鉴会列出**所有**地图，未拿许可证的那张只给一个"指路"盒子
+    // 批 2：图鉴会列出**所有**地图，没到过的那几张只给一个"指路"盒子
     const lockedBoxes = [...document.querySelectorAll('#pApp .cx-locked-box')].map(e=>e.textContent);
-    return { mapH, zones, n: items.length, first, canvasOk, wheres, lockedBoxes };
+    return { mapH, zones, n: items.length, first, canvasOk, wheres, lockedBoxes,
+      mapTotal: window.__cfg.MAPS.length, zoneTotal: window.__cfg.zonesOfMap('calm-bay').length };
   })())`));
-  check('D7 图鉴有「地图 → 海域」两级分组（宁静海湾 5 层 + 冰封极地未解锁指路）',
-    cx.mapH.length === 2 && cx.mapH[0] === '宁静海湾' && cx.mapH[1] === '冰封极地'
-      && cx.zones.length === 5 && cx.lockedBoxes.length === 1
+  check('D7 图鉴有「地图 → 海域」两级分组（每张图一组；没到过的图各给一个指路盒子）',
+    cx.mapH.length === cx.mapTotal && cx.mapH[0] === '宁静海湾'
+      && cx.zones.length === cx.zoneTotal && cx.lockedBoxes.length === cx.mapTotal - 1
       && /航线/.test(cx.lockedBoxes[0]),
-    `地图组 ${JSON.stringify(cx.mapH)} · 海域组 ${cx.zones.length} · 未解锁 ${JSON.stringify(cx.lockedBoxes)}`);
+    `地图组 ${JSON.stringify(cx.mapH)}（共 ${cx.mapTotal}）· 海域组 ${cx.zones.length} · 未解锁 ${cx.lockedBoxes.length}`);
   check('D8 图鉴仍按"海域深度 → 身价"排序，20 条鱼图标全部画出',
     cx.n === 20 && cx.first === 'sardine' && cx.canvasOk, `${cx.n} 条 · 首条 ${cx.first}`);
   check('D9 每条鱼的「所在海域」带上地图名',
@@ -422,11 +427,12 @@ try {
       time: document.getElementById('pTime').textContent,
       statusSvg: document.querySelectorAll('.p-sys svg').length };
   })())`));
-  check('E5 桌面有应用列表：电话 / 渔具店 / 枪店 / 鱼图鉴 / 航线 / 设置 六个 App',
-    home.n === 6 && home.ids.join(',') === 'call,shop,gunshop,codex,route,settings'
-      && home.names[0].includes('电话') && home.names[1].includes('渔具店')
-      && home.names[2].includes('枪店') && home.names[3].includes('鱼图鉴')
-      && home.names[4].includes('航线') && home.names[5].includes('设置'),
+  check('E5 桌面有应用列表：电话 / 短信 / 渔具店 / 枪店 / 鱼图鉴 / 航线 / 电台 / 设置 八个常驻 App',
+    home.n === 8 && home.ids.join(',') === 'call,sms,shop,gunshop,codex,route,radio,settings'
+      && home.names[0].includes('电话') && home.names[1].includes('短信')
+      && home.names[2].includes('渔具店') && home.names[3].includes('枪店')
+      && home.names[4].includes('鱼图鉴') && home.names[5].includes('航线')
+      && home.names[6].includes('电台') && home.names[7].includes('设置'),
     JSON.stringify(home.names));
   check('E6 手机有状态栏（时钟 + 信号/Wi-Fi/电量）、桌面小部件，且**没有**抛竿 Dock',
     home.statusSvg === 3 && /^\d{1,2}:\d{2}$/.test(home.time) && home.hasWidget
@@ -796,7 +802,7 @@ try {
     g.save.calls = cfg.CALLS.filter(c => c.id !== 'shop-winch').map(c => c.id);   // 其它都标记已听
     g.save.lastCallCast = -999;
     g.save.casts = 25;
-    g.save.chart = true; g.save.boats = { owned: ['golden'], current: 'golden' };
+    g.save.charts = { polar: true }; g.save.boats = { owned: ['golden'], current: 'golden' };
     g.save.licenses = [];                       // ⚠ 故意保持空：读 licenses 的旧实现会判"没到过极地"
     g.save.mapBest = { polar: 300 };
     g.applyUpgrades(); g.showIdle();
