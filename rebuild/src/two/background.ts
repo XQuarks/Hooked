@@ -9,7 +9,7 @@
  *    少了这两个，水下就是一块死板的渐变。
  * 3. 所有轮廓都用噪声生成，不用贴图，保证单文件离线。
  */
-import { Band, MapInfo } from '../game/data';
+import { Band, MapId, MapInfo } from '../game/data';
 import { Cam, shade, tint, rgba, fbm1, hash1, noiseTile } from './core';
 
 const SPACING = 6.4; // 剪影层云团的世界间距（米）
@@ -20,6 +20,88 @@ function deepK(depth: number): number {
 }
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+// ------------------------------------------------------------ 深度装饰表
+//
+// 以前整片海随机撒同一套「珊瑚 / 海带 / 岩石」，下潜到 300 米和 30 米长得一样，
+// 只剩水色在变。现在按「这一丛所在的世界深度」换物种：
+// 浅滩是珊瑚 + 海带，珊瑚林长海扇，蓝洞只剩岩壁 + 管状海绵，
+// 断崖是岩层 + 骸骨；冰海则是碎冰 → 冰柱 → 沉船 → 热泉 → 鱼王座废墟。
+// 只换装饰，不动任何水色 / 光柱 / 玩法。
+
+type Decor =
+  | 'coral'
+  | 'fan'
+  | 'kelp'
+  | 'rock'
+  | 'tube'
+  | 'urchin'
+  | 'bone'
+  | 'floe'
+  | 'pillar'
+  | 'wreck'
+  | 'vent'
+  | 'ruin';
+
+const DECOR_ZONES: Record<MapId, { at: number; list: [Decor, number][] }[]> = {
+  bay: [
+    { at: 0, list: [['coral', 5], ['kelp', 4], ['rock', 2], ['urchin', 1]] },
+    { at: 80, list: [['coral', 6], ['fan', 4], ['kelp', 3], ['urchin', 1]] },
+    { at: 180, list: [['rock', 4], ['tube', 4], ['bone', 2], ['fan', 1]] },
+    { at: 300, list: [['rock', 5], ['bone', 3], ['tube', 2], ['fan', 1]] },
+  ],
+  ice: [
+    { at: 0, list: [['floe', 5], ['pillar', 3], ['rock', 2], ['kelp', 1]] },
+    { at: 100, list: [['pillar', 6], ['rock', 3], ['floe', 1]] },
+    { at: 220, list: [['wreck', 4], ['rock', 4], ['kelp', 2], ['bone', 2]] },
+    { at: 360, list: [['vent', 4], ['rock', 5], ['bone', 2], ['tube', 1]] },
+    { at: 500, list: [['ruin', 5], ['rock', 4], ['vent', 1], ['bone', 2]] },
+  ],
+};
+
+/** r 决定这一格长什么（同一个 r 永远得到同一种，镜头移动时不会闪） */
+function decorAt(map: MapId, depth: number, r: number): Decor {
+  const zones = DECOR_ZONES[map];
+  let list = zones[0].list;
+  for (const z of zones) if (depth >= z.at) list = z.list;
+  let total = 0;
+  for (const [, w] of list) total += w;
+  let x = r * total;
+  for (const [kind, w] of list) {
+    x -= w;
+    if (x <= 0) return kind;
+  }
+  return list[list.length - 1][0];
+}
+
+// ------------------------------------------------------------ 背景地标
+//
+// 每个海域固定几处「大件」，压在远景与中景之间，随深度出现。
+// 它们比碎装饰大一个数量级，负责让人一眼认出「我下到哪一层了」，
+// 所以位置是写死的，不随机 —— 每次下潜都能在同一深度看到同一件东西。
+
+interface Landmark {
+  kind: 'arch' | 'wreck' | 'vent' | 'throne';
+  depth: number;
+  x: number; // 世界 x（米）
+  w: number; // 宽（米）
+  h: number; // 高（米）
+}
+
+const LANDMARKS: Record<MapId, Landmark[]> = {
+  bay: [
+    { kind: 'arch', depth: 126, x: -1.7, w: 4.6, h: 3.4 }, // 珊瑚林：礁石拱门
+    { kind: 'wreck', depth: 246, x: 1.5, w: 5.6, h: 2.8 }, // 蓝洞：沉掉的小渔船
+    { kind: 'arch', depth: 352, x: 1.3, w: 5.4, h: 4.2 }, // 断崖：裂口
+  ],
+  ice: [
+    { kind: 'arch', depth: 82, x: -1.6, w: 4.4, h: 3.0 }, // 浮冰层：冰拱
+    { kind: 'wreck', depth: 292, x: 1.4, w: 6.2, h: 3.2 }, // 沉船带
+    { kind: 'vent', depth: 432, x: -1.5, w: 4.6, h: 2.6 }, // 热泉裂谷
+    { kind: 'throne', depth: 548, x: 0.2, w: 5.2, h: 4.4 }, // 鱼王座
+  ],
+};
+
 
 export class Backdrop {
   /** 画质只影响「装饰层」的开关，不影响玩法与主构图 */
@@ -45,6 +127,14 @@ export class Backdrop {
   private grainW = -1;
   private grainH = -1;
   private grainDpr = -1;
+  /**
+   * 装饰物种记忆：key = 层|格|序。
+   * 物种只在「这一格已经离开画面」时才重算 —— 否则下潜穿过分段线时，
+   * 眼前那丛海带会突然变成岩石，看起来就是「装饰物突然消失 / 出现」。
+   */
+  private decorMemo = new Map<string, Decor>();
+  /** 记住上一次算的是哪张图：换图时整批作废 */
+  private decorMap: MapId | null = null;
 
   /** 背景：必须在鱼之前画 */
   paintBack(
@@ -69,6 +159,8 @@ export class Backdrop {
       this.waterColumn(g, cam, t, band, map, depth);
       this.rays(g, cam, t, band, map, depth);
       this.silhouette(g, cam, t, band, map, depth, 0.34, 0.0);
+      // 地标压在最远一层剪影之上、中景之下：像远处被雾吃掉一半的大件
+      if (this.quality !== 'low') this.landmark(g, cam, t, band, map);
       this.silhouette(g, cam, t, band, map, depth, 0.62, 1.0);
       if (this.quality !== 'low') this.farFish(g, cam, t, band, depth);
       if (this.quality === 'high') this.caustics(g, cam, t, band, depth);
@@ -605,6 +697,43 @@ export class Backdrop {
     }
     g.restore();
 
+    // 海雪：160 米起出现、越深越密。深海之所以看着「有厚度」，全靠这层往下沉的白点
+    const snow = clamp01((depth - 160) / 220);
+    if (snow > 0.02) {
+      for (let i = 0; i < 30; i++) {
+        const seed = i * 4.37;
+        const px = (hash1(seed) * W + Math.sin(t * 0.13 + seed) * 14 + W) % W;
+        const speed = 3 + hash1(seed + 1.7) * 8;
+        const py = ((hash1(seed + 2.3) * H + t * speed + cam.cy * 6) % (H + 24)) - 12;
+        const r = 0.5 + hash1(seed + 3.9) * 1.1;
+        g.fillStyle = rgba('#e6f7ff', (0.05 + hash1(seed + 5.1) * 0.16) * snow);
+        g.beginPath();
+        g.arc(px, py, r, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+
+    // 深海生物光：260 米起，用所在深度带的主色（热泉是橙的、鱼王座是紫的），
+    // 一路往下「换了一个世界」的感觉，一半来自水色，另一半就来自这些会呼吸的光点。
+    const bio = clamp01((depth - 260) / 220);
+    if (bio > 0.02) {
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 22; i++) {
+        const seed = i * 6.71;
+        const px = (hash1(seed) * W + Math.sin(t * 0.21 + seed * 1.7) * 22 + W) % W;
+        const drift = t * 3.5 + cam.cy * 7 * (0.4 + hash1(seed + 2.7) * 0.6);
+        const py = ((hash1(seed + 1.1) * H + drift + Math.sin(t * 0.17 + seed) * 26) % (H + 40) + H + 40) % (H + 40) - 20;
+        const tw = 0.5 + 0.5 * Math.sin(t * (0.8 + hash1(seed + 3.3) * 1.6) + seed);
+        const r = 0.8 + hash1(seed + 4.1) * 1.8;
+        g.fillStyle = rgba(band.ray, (0.1 + hash1(seed + 5.9) * 0.22) * bio * tw);
+        g.beginPath();
+        g.arc(px, py, r, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.restore();
+    }
+
     void map;
   }
 
@@ -773,13 +902,18 @@ export class Backdrop {
     speed: number,
     seedBias: number,
   ) {
-    const { W, H, scale } = cam;
+    const { H, scale } = cam;
     const dk = deepK(depth);
     const near = speed > 1;
     // 空气透视：越远越接近水色（融进雾里），越近越黑（剪影）。
     // 三层分别对应「雾里轮廓 / 中景 / 前景遮挡」。
     const dark = near ? -0.9 : speed > 0.5 ? -0.52 : -0.2;
-    const col = shade(band.fog, dark * (1.14 - dk * 0.22));
+    // 越深，单纯压暗就越看不见东西：水和装饰一起变成同一种黑。
+    // 所以深处改成「往该带的主光色上靠一点」—— 断崖是冷蓝、热泉是暖橙，
+    // 装饰像被头灯照到边缘一样浮出来，而不是糊进黑色背景里。
+    const lift = clamp01((depth - 170) / 250);
+    const base = shade(band.fog, dark * (1.14 - dk * 0.22));
+    const col = lift > 0.02 ? tint(base, band.light, 0.1 + lift * 0.26) : base;
     const alpha = near ? 0.96 : speed > 0.5 ? 0.72 : 0.5;
     const layerCam = cam.cy * speed;
 
@@ -788,8 +922,15 @@ export class Backdrop {
     const bot = layerCam + viewH / 2 + SPACING;
     const i0 = Math.floor(top / SPACING);
     const i1 = Math.ceil(bot / SPACING);
-    // 越近的层越密，否则竖屏中间会空得像一张纸
-    const perCell = near ? 3 : speed > 0.5 ? 2 : 1;
+    // 越近的层越密。三层都真正可见之后，总量控制在「一屏十几丛」：
+    // 再多鱼就成背景了。
+    const perCell = near ? 3 : 2;
+
+    // 换图（阳光湾 ↔ 冰海）时物种整套换掉，记忆要清空
+    if (this.decorMap !== map.id) {
+      this.decorMap = map.id;
+      this.decorMemo.clear();
+    }
 
     g.save();
     g.fillStyle = rgba(col, alpha);
@@ -799,36 +940,74 @@ export class Backdrop {
         const r = hash1(seed);
         if (r < (near ? 0.06 : 0.2)) continue; // 留白，避免每格都有东西
         const wy = i * SPACING + (hash1(seed + 1) - 0.5) * 3.2 + (k - (perCell - 1) / 2) * (SPACING / perCell);
-        const sy = cam.toScreenY(wy - (cam.cy - layerCam));
+        // 视差：这一层只吃到镜头位移的 speed 倍。
+        // 换句话说，屏幕位置等价于「把镜头换成 layerCam 去取景」——
+        // 以前的写法把 (cy - layerCam) 减在取景坐标上，位移方向正好反了，
+        // 潜得越深、远景和中景被推得越出画面，最后只剩最前面一层（水下显得空）。
+        const sy = cam.toScreenY(wy + (cam.cy - layerCam));
         const side = hash1(seed + 2) > 0.5 ? 1 : -1;
         const s = (0.65 + hash1(seed + 3) * 0.85) / (speed > 1 ? 1.35 : 1);
 
-        if (r < 0.42) this.coralClump(g, cam, side, sy, s, seed + 4, t);
-        else if (r < 0.72) this.rockClump(g, cam, side, sy, s, seed + 8);
-        else this.kelpClump(g, cam, side, sy, s, seed + 12, t);
+        // 长什么由「镜头所在深度」决定（视差层的世界坐标只是视觉假象，不能拿来判断深度），
+        // 再加一点按格的抖动量，让换层发生在 20 米左右的过渡带里，而不是一刀切。
+        //
+        // 但物种必须「粘住」：每帧按当前深度重算的话，下潜穿过 180 / 300 / 500 米这些
+        // 分段线时，屏幕上正看着的那丛海带会忽然变成管状海绵（看上去就是「装饰消失 / 出现」）。
+        // 所以每一格都被记忆下来，只有它已经滑出画面时才允许换成新物种。
+        const zoneDepth = depth + (hash1(seed + 9) - 0.5) * 24;
+        const key = `${seedBias}|${i}|${k}`;
+        let kind = this.decorMemo.get(key);
+        // 判定离屏要留足余量：高装饰（海扇 / 海带 / 冰刺）能从落点往上长 4 米左右
+        const off = sy < -H * 0.45 || sy > H * 1.45;
+        if (!kind || off) {
+          kind = decorAt(map.id, zoneDepth, hash1(seed + 9));
+          if (this.decorMemo.size > 4000) this.decorMemo.clear();
+          this.decorMemo.set(key, kind);
+        }
+        // 近景层只留「挡得住镜头」的轮廓：沉船骨、废墟石柱贴这么近会糊满画面
+        if (near && kind !== 'kelp' && kind !== 'coral' && kind !== 'rock' && kind !== 'floe') {
+          kind = 'rock';
+        }
+        switch (kind) {
+          case 'coral':
+            this.coralClump(g, cam, side, sy, s, seed + 4, t);
+            break;
+          case 'fan':
+            this.fanClump(g, cam, side, sy, s, seed + 6, t);
+            break;
+          case 'kelp':
+            this.kelpClump(g, cam, side, sy, s, seed + 12, t);
+            break;
+          case 'tube':
+            this.tubeClump(g, cam, side, sy, s, seed + 7);
+            break;
+          case 'urchin':
+            this.urchinClump(g, cam, side, sy, s, seed + 8);
+            break;
+          case 'bone':
+            this.boneClump(g, cam, side, sy, s, seed + 10);
+            break;
+          case 'floe':
+            this.floeClump(g, cam, side, sy, s, seed + 13, near);
+            break;
+          case 'pillar':
+            this.icePillar(g, cam, side, sy, s, seed + 15);
+            break;
+          case 'wreck':
+            this.wreckClump(g, cam, side, sy, s, seed + 16);
+            break;
+          case 'vent':
+            this.ventClump(g, cam, side, sy, s, seed + 18, t, band.ray);
+            break;
+          case 'ruin':
+            this.ruinClump(g, cam, side, sy, s, seed + 20);
+            break;
+          default:
+            this.rockClump(g, cam, side, sy, s, seed + 8, near);
+        }
       }
     }
     g.restore();
-
-    // 冰海额外：冰柱从上方垂下来
-    if (map.id === 'ice' && !near && speed < 0.5) {
-      g.save();
-      g.fillStyle = rgba(tint(col, '#bfe9ff', 0.3), 0.5);
-      for (let i = i0; i <= i1; i++) {
-        const seed = i * 9.13;
-        if (hash1(seed) < 0.55) continue;
-        const sy = cam.toScreenY(i * SPACING + hash1(seed + 1) * 3);
-        const w = 6 + hash1(seed + 2) * 22;
-        const h = (24 + hash1(seed + 3) * 58) * (cam.scale / 60);
-        g.beginPath();
-        g.moveTo(W * 0.5 + (hash1(seed + 4) - 0.5) * W - w / 2, sy - h);
-        g.lineTo(W * 0.5 + (hash1(seed + 4) - 0.5) * W + w / 2, sy - h);
-        g.lineTo(W * 0.5 + (hash1(seed + 4) - 0.5) * W, sy);
-        g.closePath();
-        g.fill();
-      }
-      g.restore();
-    }
   }
 
   /** 珊瑚：从一点长出几根渐细的分叉枝，末端带小球（不是三角形） */
@@ -881,7 +1060,7 @@ export class Backdrop {
     }
   }
 
-  /** 岩石：不对称的多段弧 + 附着小石，避免变成「面包」 */
+  /** 岩石：不对称的折线礁石 + 附着的小石。用折线而不是一条弧，弧线画出来像蘑菇 */
   private rockClump(
     g: CanvasRenderingContext2D,
     cam: Cam,
@@ -889,25 +1068,48 @@ export class Backdrop {
     sy: number,
     s: number,
     seed: number,
+    near = false,
   ) {
     const { W, scale } = cam;
     const k = scale / 60;
-    const bx = side > 0 ? W * (0.92 + hash1(seed) * 0.1) : W * (0.08 - hash1(seed) * 0.1);
-    const w = (44 + hash1(seed + 1) * 58) * s * k;
-    const h = (24 + hash1(seed + 2) * 42) * s * k;
-    const wob = (hash1(seed + 3) - 0.5) * 0.5;
+    // 近景层要压住鱼，所以贴边收窄；远景/中景可以往中间铺，横向才不会排成一条竖线
+    const bx = near
+      ? side > 0
+        ? W * (0.9 + hash1(seed) * 0.1)
+        : W * (0.1 - hash1(seed) * 0.1)
+      : side > 0
+        ? W * (0.74 + hash1(seed) * 0.28)
+        : W * (0.26 - hash1(seed) * 0.28);
+    const w = (52 + hash1(seed + 1) * 54) * s * k;
+    // 扁而宽：石头是横向铺开的，竖向比会变成小帐篷 / 小三角
+    const h = (14 + hash1(seed + 2) * 22) * s * k;
 
+    // 顶边：两端落地、中间起伏的一段乱石脊。每个拐点高度都不同，
+    // 所以不会出现一个居中的尖，也就不会看着像帐篷。
+    const n = 7;
     g.beginPath();
-    g.moveTo(bx - w, sy);
-    g.bezierCurveTo(bx - w * 0.92, sy - h * (0.72 + wob), bx - w * 0.5, sy - h * 1.06, bx - w * 0.12, sy - h * (0.98 - wob * 0.4));
-    g.bezierCurveTo(bx + w * 0.2, sy - h * 0.9, bx + w * 0.5, sy - h * (0.62 + wob), bx + w * 0.7, sy - h * 0.34);
-    g.bezierCurveTo(bx + w * 0.88, sy - h * 0.16, bx + w * 0.96, sy - h * 0.06, bx + w, sy);
+    g.moveTo(bx - w * 0.56, sy);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      const edge = Math.sin(t * Math.PI);
+      const amp = 0.4 + hash1(seed + i * 5.7) * 0.62;
+      g.lineTo(bx + (t - 0.5) * w, sy - h * edge * amp);
+    }
+    g.lineTo(bx + w * 0.56, sy);
     g.closePath();
     g.fill();
 
-    if (hash1(seed + 4) > 0.4) {
+    // 旁边再压一块小石：单独一块石头看着总像半个圆面包
+    if (hash1(seed + 4) > 0.42) {
+      const sw = w * (0.18 + hash1(seed + 6) * 0.18);
+      const sh = h * (0.24 + hash1(seed + 7) * 0.3);
+      const dx = bx + w * (0.42 + hash1(seed + 8) * 0.14);
       g.beginPath();
-      g.ellipse(bx + w * 0.62, sy - h * 0.12, w * 0.26, h * 0.3, -0.2, Math.PI, Math.PI * 2);
+      g.moveTo(dx - sw * 0.6, sy);
+      g.lineTo(dx - sw * 0.24, sy - sh);
+      g.lineTo(dx + sw * 0.16, sy - sh * 0.74);
+      g.lineTo(dx + sw * 0.6, sy);
+      g.closePath();
       g.fill();
     }
   }
@@ -941,6 +1143,430 @@ export class Backdrop {
       g.bezierCurveTo(tipX + w * 0.46, sy - h * 0.72, x0 + w * 1.05, sy - h * 0.32, x0 + w, sy);
       g.closePath();
       g.fill();
+    }
+  }
+
+  /** 海扇（柳珊瑚）：一把立起来的网，比珊瑚更「薄」，珊瑚林层的主角 */
+  private fanClump(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+    t: number,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = side > 0 ? W * (0.74 + hash1(seed) * 0.28) : W * (0.26 - hash1(seed) * 0.28);
+    const h = (64 + hash1(seed + 1) * 62) * s * k;
+    const fanR = h * 0.78;
+    const sway = Math.sin(t * 0.42 + seed) * 0.06;
+
+    g.save();
+    g.translate(bx, sy);
+    g.rotate((side > 0 ? -1 : 1) * 0.12 + sway);
+    g.strokeStyle = g.fillStyle;
+    g.lineCap = 'round';
+
+    // 主干
+    const stem = h * 0.34;
+    g.lineWidth = Math.max(1.6, 3.2 * s * k);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(0, -stem);
+    g.stroke();
+
+    // 扇骨：从主干顶端放射出去
+    const n = 7;
+    const spread = 1.05;
+    g.lineWidth = Math.max(1, 2 * s * k);
+    for (let i = 0; i <= n; i++) {
+      const a = -Math.PI / 2 - spread + (spread * 2 * i) / n;
+      const r = fanR * (0.86 + hash1(seed + i * 3.1) * 0.2);
+      g.beginPath();
+      g.moveTo(0, -stem);
+      g.quadraticCurveTo(
+        Math.cos(a) * r * 0.52,
+        -stem + Math.sin(a) * r * 0.62,
+        Math.cos(a) * r,
+        -stem + Math.sin(a) * r,
+      );
+      g.stroke();
+    }
+    // 两道横档：把扇骨连成一张网
+    for (let ring = 1; ring <= 2; ring++) {
+      const rr = fanR * (ring === 1 ? 0.46 : 0.78);
+      g.beginPath();
+      for (let i = 0; i <= n; i++) {
+        const a = -Math.PI / 2 - spread + (spread * 2 * i) / n;
+        const x = Math.cos(a) * rr;
+        const y = -stem + Math.sin(a) * rr;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  /** 管状海绵：几根竖直的管子，蓝洞层用它顶替珊瑚 */
+  private tubeClump(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = side > 0 ? W * (0.74 + hash1(seed) * 0.28) : W * (0.26 - hash1(seed) * 0.28);
+    const n = 2 + Math.floor(hash1(seed + 1) * 3);
+    for (let i = 0; i < n; i++) {
+      const x = bx + (i - (n - 1) / 2) * 15 * s * k;
+      const w = (7 + hash1(seed + i * 3.1) * 6) * s * k;
+      const h = (28 + hash1(seed + i * 5.7) * 56) * s * k;
+      g.beginPath();
+      g.moveTo(x - w * 0.5, sy);
+      g.lineTo(x - w * 0.42, sy - h);
+      g.quadraticCurveTo(x, sy - h - w * 0.6, x + w * 0.42, sy - h);
+      g.lineTo(x + w * 0.5, sy);
+      g.closePath();
+      g.fill();
+    }
+  }
+
+  /** 海胆：一团带刺的半圆，浅滩与珊瑚林地上的小颗粒 */
+  private urchinClump(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = side > 0 ? W * (0.74 + hash1(seed) * 0.28) : W * (0.26 - hash1(seed) * 0.28);
+    const r = (9 + hash1(seed + 1) * 6) * s * k;
+    g.save();
+    g.lineCap = 'round';
+    g.strokeStyle = g.fillStyle;
+    g.lineWidth = Math.max(1, 1.6 * s * k);
+    for (let i = 0; i < 15; i++) {
+      const a = Math.PI + (i / 14) * Math.PI;
+      const len = r * (1.5 + hash1(seed + i * 2.3) * 0.7);
+      g.beginPath();
+      g.moveTo(bx, sy - r * 0.25);
+      g.lineTo(bx + Math.cos(a) * len, sy - r * 0.25 + Math.sin(a) * len);
+      g.stroke();
+    }
+    g.beginPath();
+    g.arc(bx, sy - r * 0.2, r, Math.PI, Math.PI * 2);
+    g.fill();
+    g.restore();
+  }
+
+  /** 骸骨：半埋在断崖里的肋骨 + 一截脊椎，深海最便宜的「这里死过东西」 */
+  private boneClump(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = side > 0 ? W * (0.74 + hash1(seed) * 0.28) : W * (0.26 - hash1(seed) * 0.28);
+    const n = 3 + Math.floor(hash1(seed + 1) * 3);
+    g.save();
+    g.strokeStyle = g.fillStyle;
+    g.lineCap = 'round';
+    for (let i = 0; i < n; i++) {
+      const x = bx + (i - (n - 1) / 2) * 9 * s * k;
+      const h = (24 + hash1(seed + i * 4.3) * 36) * s * k;
+      g.lineWidth = Math.max(1.4, 3 * s * k);
+      g.beginPath();
+      g.moveTo(x, sy);
+      g.quadraticCurveTo(x + 9 * s * k, sy - h * 0.58, x + 1.5 * s * k, sy - h);
+      g.stroke();
+    }
+    // 横向那根：像一截脊椎，把肋骨串起来
+    g.lineWidth = Math.max(1.6, 3.4 * s * k);
+    g.beginPath();
+    g.moveTo(bx - n * 4.6 * s * k, sy - 5 * s * k);
+    g.quadraticCurveTo(bx, sy + 2 * s * k, bx + n * 4.6 * s * k, sy - 6 * s * k);
+    g.stroke();
+    g.restore();
+  }
+
+  /** 碎冰：浮冰层堆在侧下方的棱角冰块 */
+  private floeClump(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+    near = false,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = near
+      ? side > 0
+        ? W * (0.9 + hash1(seed) * 0.1)
+        : W * (0.1 - hash1(seed) * 0.1)
+      : side > 0
+        ? W * (0.74 + hash1(seed) * 0.28)
+        : W * (0.26 - hash1(seed) * 0.28);
+    const w = (26 + hash1(seed + 1) * 30) * s * k;
+    const h = (14 + hash1(seed + 2) * 20) * s * k;
+    g.beginPath();
+    g.moveTo(bx - w * 0.5, sy);
+    g.lineTo(bx - w * 0.3, sy - h * 0.86);
+    g.lineTo(bx + w * 0.02, sy - h * 1.12);
+    g.lineTo(bx + w * 0.36, sy - h * 0.6);
+    g.lineTo(bx + w * 0.5, sy);
+    g.closePath();
+    g.fill();
+  }
+
+  /** 冰刺：从两侧立起来的冰锥，冰柱林那一层靠它撑场面 */
+  private icePillar(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = side > 0 ? W * (0.74 + hash1(seed) * 0.28) : W * (0.26 - hash1(seed) * 0.28);
+    for (let i = 0; i < 2; i++) {
+      const x = bx + (i - 0.5) * 16 * s * k;
+      const w = (10 + hash1(seed + i * 3.7) * 12) * s * k;
+      const h = (36 + hash1(seed + i * 5.3) * 60) * s * k;
+      const lean = (hash1(seed + i * 7.1) - 0.5) * 0.55;
+      g.beginPath();
+      g.moveTo(x - w * 0.5, sy);
+      g.lineTo(x + lean * h - w * 0.12, sy - h);
+      g.lineTo(x + lean * h + w * 0.1, sy - h * 0.94);
+      g.lineTo(x + w * 0.5, sy);
+      g.closePath();
+      g.fill();
+    }
+  }
+
+  /** 沉船残骸：几根翘起的船肋 + 一根横梁 —— 沉船带的标志物 */
+  private wreckClump(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = side > 0 ? W * (0.74 + hash1(seed) * 0.28) : W * (0.26 - hash1(seed) * 0.28);
+    const w = (44 + hash1(seed + 1) * 34) * s * k;
+    const h = (26 + hash1(seed + 2) * 26) * s * k;
+    const ribs = 3 + Math.floor(hash1(seed + 3) * 2);
+    g.save();
+    g.strokeStyle = g.fillStyle;
+    g.lineCap = 'round';
+    for (let i = 0; i < ribs; i++) {
+      const x = bx + (i / (ribs - 1) - 0.5) * w;
+      const hh = h * (0.7 + hash1(seed + i * 3.3) * 0.5);
+      g.lineWidth = Math.max(1.6, 3.2 * s * k);
+      g.beginPath();
+      g.moveTo(x, sy);
+      g.quadraticCurveTo(x + 7 * s * k, sy - hh * 0.62, x - 1.5 * s * k, sy - hh);
+      g.stroke();
+    }
+    // 横梁：把肋骨串起来，不然只是几根草
+    g.lineWidth = Math.max(1.4, 2.8 * s * k);
+    g.beginPath();
+    g.moveTo(bx - w * 0.52, sy - h * 0.3);
+    g.quadraticCurveTo(bx, sy - h * 0.02, bx + w * 0.52, sy - h * 0.34);
+    g.stroke();
+    g.restore();
+  }
+
+  /** 热泉：石烟囱 + 往上飘的暖色烟柱，颜色取深度带的主光 */
+  private ventClump(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+    t: number,
+    ray: string,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = side > 0 ? W * (0.74 + hash1(seed) * 0.28) : W * (0.26 - hash1(seed) * 0.28);
+    const chimneys = 1 + Math.floor(hash1(seed + 1) * 2);
+    let tallest = 0;
+    for (let i = 0; i < chimneys; i++) {
+      const cx = bx + (i - (chimneys - 1) / 2) * 14 * s * k;
+      const cw = (7 + hash1(seed + i * 2.9) * 6) * s * k;
+      const ch = (26 + hash1(seed + i * 4.7) * 46) * s * k;
+      tallest = Math.max(tallest, ch);
+      g.beginPath();
+      g.moveTo(cx - cw, sy);
+      g.lineTo(cx - cw * 0.6, sy - ch);
+      g.lineTo(cx + cw * 0.6, sy - ch);
+      g.lineTo(cx + cw, sy);
+      g.closePath();
+      g.fill();
+    }
+    // 烟：加色混合，越往上越淡
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const p = (t * 0.24 + i / 5 + hash1(seed + i) * 0.2) % 1;
+      const yy = sy - tallest - p * tallest * 1.4;
+      const rr = (6 + p * 16) * s * k;
+      g.fillStyle = rgba(ray, 0.13 * (1 - p));
+      g.beginPath();
+      g.ellipse(bx + Math.sin(p * 3 + seed) * 8 * s * k, yy, rr, rr * 0.7, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+  }
+
+  /** 废墟：断掉的石柱 —— 鱼王座那一层只剩人造物的残骸 */
+  private ruinClump(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    side: number,
+    sy: number,
+    s: number,
+    seed: number,
+  ) {
+    const { W, scale } = cam;
+    const k = scale / 60;
+    const bx = side > 0 ? W * (0.74 + hash1(seed) * 0.28) : W * (0.26 - hash1(seed) * 0.28);
+    const n = 2 + Math.floor(hash1(seed + 1) * 2);
+    for (let i = 0; i < n; i++) {
+      const w = (9 + hash1(seed + i * 3.1) * 7) * s * k;
+      const h = (28 + hash1(seed + i * 5.9) * 48) * s * k;
+      const x = bx + (i - (n - 1) / 2) * 20 * s * k;
+      g.beginPath();
+      g.moveTo(x - w * 0.5, sy);
+      g.lineTo(x - w * 0.42, sy - h * 0.9);
+      g.lineTo(x + w * 0.1, sy - h);
+      g.lineTo(x + w * 0.46, sy - h * 0.86);
+      g.lineTo(x + w * 0.5, sy);
+      g.closePath();
+      g.fill();
+    }
+  }
+
+  // ------------------------------------------------------------ 地标
+
+  /**
+   * 背景地标：写死深度的几件大物，压在最远那层剪影之上。
+   * 比碎装饰大一个数量级，位置固定，所以每次下潜到同一深度都能看到同一件东西 ——
+   * 「我知道自己下到哪一层了」靠的就是它。
+   * 颜色比普通装饰更淡：它是远处的东西，不能抢走鱼的注意力。
+   */
+  private landmark(
+    g: CanvasRenderingContext2D,
+    cam: Cam,
+    t: number,
+    band: Band,
+    map: MapInfo,
+  ) {
+    const { H } = cam;
+    const ice = map.id === 'ice';
+    for (const lm of LANDMARKS[map.id]) {
+      const sy = cam.toScreenY(-lm.depth);
+      const h = lm.h * cam.scale;
+      if (sy < -h * 1.8 || sy > H + h * 1.8) continue;
+      const w = lm.w * cam.scale;
+
+      g.save();
+      g.translate(cam.toScreenX(lm.x), sy);
+      g.fillStyle = rgba(ice ? tint(band.fog, '#bfe9ff', 0.22) : shade(band.fog, -0.36), 0.44);
+      g.strokeStyle = g.fillStyle;
+
+      if (lm.kind === 'arch') {
+        g.lineWidth = Math.max(8, h * 0.2);
+        g.lineCap = 'butt';
+        g.beginPath();
+        g.moveTo(-w * 0.5, 0);
+        g.quadraticCurveTo(-w * 0.46, -h * 0.9, 0, -h);
+        g.quadraticCurveTo(w * 0.46, -h * 0.9, w * 0.5, 0);
+        g.stroke();
+      } else if (lm.kind === 'wreck') {
+        // 倾倒的船体
+        g.beginPath();
+        g.moveTo(-w * 0.5, 0);
+        g.quadraticCurveTo(-w * 0.08, -h * 0.86, w * 0.46, -h * 0.18);
+        g.lineTo(w * 0.34, -h * 0.02);
+        g.quadraticCurveTo(-w * 0.06, -h * 0.6, -w * 0.4, 0);
+        g.closePath();
+        g.fill();
+        // 桅杆 + 破帆
+        g.lineWidth = Math.max(3, h * 0.07);
+        g.beginPath();
+        g.moveTo(-w * 0.08, -h * 0.62);
+        g.lineTo(w * 0.12, -h * 1.5);
+        g.stroke();
+        g.beginPath();
+        g.moveTo(w * 0.12, -h * 1.48);
+        g.quadraticCurveTo(w * 0.4, -h * 1.12, w * 0.26, -h * 0.78);
+        g.quadraticCurveTo(w * 0.16, -h * 0.96, w * 0.06, -h * 0.84);
+        g.closePath();
+        g.fill();
+      } else if (lm.kind === 'vent') {
+        const cols = [-0.3, 0.02, 0.3];
+        for (let i = 0; i < cols.length; i++) {
+          const cx = cols[i] * w;
+          const ch = h * (0.5 + hash1(i * 3.7 + lm.depth) * 0.5);
+          const cw = w * (0.07 + hash1(i * 5.1) * 0.05);
+          g.beginPath();
+          g.moveTo(cx - cw, 0);
+          g.lineTo(cx - cw * 0.62, -ch);
+          g.lineTo(cx + cw * 0.62, -ch);
+          g.lineTo(cx + cw, 0);
+          g.closePath();
+          g.fill();
+        }
+        g.save();
+        g.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 8; i++) {
+          const p = (t * 0.16 + i / 8) % 1;
+          const cx = cols[i % 3] * w + Math.sin(p * 4 + i) * w * 0.06;
+          const rr = w * (0.06 + p * 0.14);
+          g.fillStyle = rgba(band.ray, 0.16 * (1 - p));
+          g.beginPath();
+          g.ellipse(cx, -h * (0.5 + p * 1.1), rr, rr * 1.5, 0, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.restore();
+      } else {
+        // 鱼王座：三级台阶 + 高靠背 + 两侧断柱
+        g.fillRect(-w * 0.5, -h * 0.16, w, h * 0.16);
+        g.fillRect(-w * 0.38, -h * 0.34, w * 0.76, h * 0.18);
+        g.beginPath();
+        g.moveTo(-w * 0.2, -h * 0.34);
+        g.lineTo(-w * 0.2, -h * 0.9);
+        g.lineTo(-w * 0.04, -h);
+        g.lineTo(w * 0.2, -h * 0.88);
+        g.lineTo(w * 0.2, -h * 0.34);
+        g.closePath();
+        g.fill();
+        g.fillRect(-w * 0.64, -h * 0.52, w * 0.1, h * 0.52);
+        g.fillRect(w * 0.52, -h * 0.66, w * 0.1, h * 0.66);
+      }
+      g.restore();
     }
   }
 

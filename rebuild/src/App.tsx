@@ -67,7 +67,6 @@ export default function App() {
 
   const stageRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
-  const crossRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Engine | null>(null);
   const bannerT = useRef(0);
   const hintT = useRef(0);
@@ -511,7 +510,6 @@ export default function App() {
   // 手机图标：有主线消息才显示数字，只有普通消息时显示一个小点
   const badge = badgeKeyCount(save);
   const badgeAny = badgeTotal(save) > 0;
-  const crossVisible = hud.phase === 'shoot';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -537,10 +535,6 @@ export default function App() {
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [title, island]);
-
-  useEffect(() => {
-    if (crossRef.current) crossRef.current.style.display = crossVisible ? 'block' : 'none';
-  }, [crossVisible]);
 
   // 调试用：暴露岛队列，方便自动化脚本核对「谁在排队」
   useEffect(() => {
@@ -588,20 +582,8 @@ export default function App() {
         <footer>单文件构建 · 无外部请求 · 致敬 Ridiculous Fishing</footer>
       </aside>
 
-      <div
-        className="stage"
-        ref={stageRef}
-        onPointerDown={tapToCast}
-        onPointerMove={(e) => {
-          const el = stageRef.current;
-          const c = crossRef.current;
-          if (!el || !c) return;
-          const r = el.getBoundingClientRect();
-          c.style.transform = `translate(${e.clientX - r.left}px, ${e.clientY - r.top}px)`;
-        }}
-      >
+      <div className="stage" ref={stageRef} onPointerDown={tapToCast}>
         <div className="viewport" ref={mountRef} />
-        <div className="crosshair" ref={crossRef} style={{ display: 'none' }} />
         {splash > 0 && <div className="splash-flash" key={splash} />}
 
         {ready && !title && !forcedCall && (
@@ -610,7 +592,6 @@ export default function App() {
             <Hud
               hud={hud}
               save={save}
-              pointer={null}
               badge={badge}
               badgeAny={badgeAny}
               ringing={!!callToAnswer}

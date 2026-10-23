@@ -133,8 +133,6 @@ interface AirFish {
   hits: number;
   /** 顶飞冷却：连发枪每秒十几发，不节流会把速度叠到失控 */
   knockT: number;
-  /** 刚刚被击中的余温：>0 时镜头优先跟它，玩家连击能把鱼一路送上天 */
-  focusT: number;
   state: 'fly' | 'lost';
   life: number;
 }
@@ -822,6 +820,8 @@ export class Engine {
     let target = this.focusY;
     // 平滑率：下潜要稳、收线要跟得紧。旧项目用的是 7 / 12，这里对齐同一量级。
     let k = 6;
+    /** 空中阶段的视野倍率（1 = 常规；越大表示往后拉远）。只有 shoot 会改它 */
+    let viewZoom = 1;
     if (this.phase === 'descent') target = this.lure.y - this.camOffset(Math.max(0, -this.lure.y));
     else if (this.phase === 'ascent') {
       target = this.lure.y + 3.1;
@@ -830,51 +830,53 @@ export class Engine {
       target = this.lure.y + 3.1;
       k = 5;
     } else if (this.phase === 'shoot') {
-      // 跟「最低的那条」而不是最高的：它最快落回水里、最该先打。
-      // 打掉 / 落水之后它就不再是 fly，下一帧自然换成剩下的最低那条 ——
-      // 不需要额外的切换逻辑，天然形成「逐个点杀」的节奏。
+      // 构图锚点：最下方那条「能卖钱」的鱼。
+      // 它最快落回水里，最该先打；扣钱的鱼（水母）不参与构图 ——
+      // 把它摆到画面正中等于把失误放大，还挡住真正该打的鱼。
       //
-      // 扣钱的鱼（水母）不跟：把它钩上来甩上天本来就是失误，
-      // 镜头凑过去等于把失误摆在画面正中，还挡住了真正该打的鱼。
+      // 这里刻意不再给「刚被击中的那条」优先权：以前它优先 1.5 秒，
+      // 而每次补枪都会刷新这个计时，于是玩家一开枪镜头就被那条鱼一路带上天，
+      // 画面里只剩最上面那条，下面要落水的鱼全丢了。
       let low = Infinity;
-      let lowVy = 0;
+      let high = -Infinity;
       let lowX = 0;
-      let focus: AirFish | null = null;
       for (const a of this.air) {
         if (a.state !== 'fly') continue;
         if (a.sp.value < 0) continue;
-        // 刚被打中的那条优先：玩家正在连击它，镜头得跟住，
-        // 否则打飞的鱼一高就被「最低那条」抢走镜头，看着像追不上。
-        if (a.focusT > 0 && (!focus || a.focusT > focus.focusT)) focus = a;
         if (a.y < low) {
           low = a.y;
-          lowVy = a.vy;
           lowX = a.x;
         }
-      }
-      if (focus) {
-        low = focus.y;
-        lowVy = focus.vy;
-        lowX = focus.x;
+        if (a.y > high) high = a.y;
       }
       if (!Number.isFinite(low)) {
         // 天上全是扣钱鱼：镜头回到水面附近，让它们自己在画面上方飞
         low = 1;
-        lowVy = 0;
+        high = 1;
         lowX = 0;
       }
-      // 推近后可见高度只有 10 米出头，目标放在正中；lead 抵消镜头滞后。
-      // 高度上限放到 620m：鱼被连击顶到几十米甚至上百米时，镜头必须跟得上去，
-      // 原来的 40m 硬顶就是「鱼飞出画面、镜头追不上」的原因。
+      // 视野自适应：把「最低那条 → 最高那条」整段装进画面。
+      // 装不下就往后拉（最多拉到 1.4 倍视野）：不追着被打飞的鱼跑，
+      // 但也别让它彻底飞出画面 —— 深处的鱼血厚，得连打好几枪，跑没了就白打。
+      const span = Math.max(0, high - low);
+      const baseH = this.stage.baseVisibleH;
+      const fit = baseH > 0 ? span / (baseH * 0.6) : 1;
+      // 鱼被连击顶到几十米时继续拉远，否则画面里只剩一个点
+      const alt = 0.72 + clamp((this.focusY - 25) / 90, 0, 1) * 0.85;
+      viewZoom = clamp(Math.max(0.72, fit, alt), 0.72, 1.4);
+      const visH = baseH * viewZoom;
+      // 锚点鱼压在中线偏下 10%，上面 60% 全部留给还在飞的鱼；
+      // 实在装不下才让镜头往上让一点（最多让出 30% 视野），
+      // 保证它不会掉出画面底边。
+      const overflow = Math.max(0, span - visH * 0.6);
+      const cy = low + visH * 0.1 + Math.min(overflow * 0.5, visH * 0.3);
       k = 7;
-      target = clamp(low - 1.5 + lowVy / k, -1, 620);
+      target = clamp(cy - CAM_LEAD, -1, 620);
       this.camX = clamp(lowX, -XW + 1, XW - 1);
     } else target = 0.55;
 
-    // 空中推近（视野缩到 72%）；飞得越高视野越拉开，免得鱼在屏幕外
     const air = this.phase === 'shoot';
-    const zoom = air ? 0.72 + clamp((this.focusY - 25) / 90, 0, 1) * 0.85 : 1;
-    this.stage.setZoom(zoom);
+    this.stage.setZoom(viewZoom);
     this.stage.setPan(air ? this.camX : 0);
 
     // 指数平滑的稳态误差 = 目标速度 ÷ k —— 镜头永远落在目标后面 v/k。
@@ -1228,7 +1230,6 @@ export class Engine {
         baseScale: 1,
         hits: 0,
         knockT: 0,
-        focusT: 0,
         state: 'fly',
         life: 0,
       };
@@ -1261,7 +1262,6 @@ export class Engine {
       }
       a.vy -= g * dts;
       if (a.knockT > 0) a.knockT -= dt;
-      if (a.focusT > 0) a.focusT -= dt;
       a.x += a.vx * dts;
       a.y += a.vy * dts;
       a.rot += a.vr * dts;
@@ -1416,8 +1416,9 @@ export class Engine {
       const rr = Math.random() * w.spread;
       const x = px + Math.cos(ang) * rr;
       const y = py + Math.sin(ang) * rr * 0.85;
-      this.fx.ring(x, y, 0, '#ffe9a8', 0.1, reach * 0.75, 0.16);
-      this.fx.spawn(x, y, 0, { color: '#fff2c0', n: 2, speed: 2.4, size: 0.22, life: 0.22, gravity: 0 });
+      // 这里以前会画一圈「枪口冲击环」，手机上那圈红黄圆环跟着手指跑，很像瞄准圈，
+      // 观感很怪，而且和命中处的汁液抢戏。现在只留两点枪口火星做反馈。
+      this.fx.spawn(x, y, 0, { color: '#fff2c0', n: 3, speed: 3.2, size: 0.22, life: 0.22, gravity: 0 });
       // 天空目标优先：它比鱼稀有，一颗弹丸只打一个东西
       let hitSky = false;
       for (let k = this.sky.length - 1; k >= 0; k--) {
@@ -1440,7 +1441,9 @@ export class Engine {
       }
       if (w.splash > 0) {
         const R = w.splash;
-        this.fx.ring(x, y, 0, '#ffd0a0', 0.3, R, 0.3);
+        // 爆炸冲击环只画一小圈：真实半径 11 米在竖屏上等于半个屏幕的圆弧，
+        // 手机上看着像一个莫名其妙的大圆圈。半径信息交给火光和镜头震动表达。
+        this.fx.ring(x, y, 0, '#ffd0a0', 0.3, Math.min(R, 3.2), 0.3);
         this.fx.spawn(x, y, 0, { color: '#ffb066', n: 16, speed: 7, size: 0.6, life: 0.5, gravity: 0 });
         for (let k = this.sky.length - 1; k >= 0; k--) {
           const s = this.sky[k];
@@ -1469,7 +1472,6 @@ export class Engine {
         return;
       }
       a.knockT = 0.22;
-      a.focusT = 1.5;
       // 没打死 → 被冲击力顶到更高空（y 向上为正，所以 vy 要往上加）
       a.hits += 1;
       const n = a.hits;

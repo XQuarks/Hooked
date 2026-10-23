@@ -215,6 +215,15 @@ export class Stage2D {
     this.zoomTarget = Math.max(0.5, Math.min(1.4, z));
   }
 
+  /**
+   * zoom = 1 时画面纵向能看到多少米。
+   * 空中阶段的镜头要「把最低和最高的鱼一起装进画面」，只能由这里提供换算基准，
+   * 否则 engine 不知道屏幕有多高。
+   */
+  get baseVisibleH() {
+    return this.baseScale > 0 ? this.H / this.baseScale : 12;
+  }
+
   /** 横向平移：空中推近后视野变窄，要跟着目标横向走，否则鱼会跑出画面 */
   setPan(x: number) {
     this.panTarget = x;

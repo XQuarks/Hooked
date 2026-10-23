@@ -8,7 +8,6 @@ import { Money, PhoneFab, usePresence } from './common';
 interface Props {
   hud: HudState;
   save: SaveState;
-  pointer: { x: number; y: number } | null;
   /** 主线未读数（手机图标显示数字） */
   badge: number;
   /** 是否存在任何未读（没有主线时显示小点） */
@@ -20,7 +19,7 @@ interface Props {
   onPhone: () => void;
 }
 
-export function Hud({ hud, save, pointer, badge, badgeAny, ringing, onPause, onAbortDown, onPhone }: Props) {
+export function Hud({ hud, save, badge, badgeAny, ringing, onPause, onAbortDown, onPhone }: Props) {
   const casting = hud.phase === 'cast';
   const fishing = hud.phase !== 'idle' && !casting;
   const map = MAPS[save.map];
@@ -132,8 +131,6 @@ export function Hud({ hud, save, pointer, badge, badgeAny, ringing, onPause, onA
             <span>{hud.combo} 连杀</span>
           </div>
         )}
-
-        {hud.phase === 'shoot' && pointer && <div className="crosshair" style={{ left: pointer.x, top: pointer.y }} />}
       </div>
 
       <div className="hud-bottom">

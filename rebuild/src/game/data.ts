@@ -29,36 +29,42 @@ export interface Species {
   desc: string;
 }
 
+// 血量（hp）按栖息深度排梯度，而不是按售价：
+//   浅水 0~100m   → 1~3 枪
+//   中层 100~250m → 4~8 枪（魔鬼鱼 8 枪是这条曲线的锚点）
+//   深层 250m+    → 9~13 枪
+//   鱼王           → 20 枪
+// 深处的鱼更值钱，也更耐打；水母是罚款鱼，血量永远是 1（打一下就炸，罚得干脆）。
 export const SPECIES: Species[] = [
   // ================= 阳光湾 =================
   { id: 'sardine', name: '沙丁鱼', map: 'bay', shape: 'fish', color: '#b9cfe0', color2: '#65869c', len: 0.34, minD: 0, maxD: 90, value: 4, hp: 1, speed: 2.4, behavior: 'school', weight: 3, desc: '罐头界顶流，挤地铁经验丰富。一辈子都在排队，死后还要挤在一个罐头里。' },
   { id: 'yellow', name: '小黄鱼', map: 'bay', shape: 'fish', color: '#ffd23f', color2: '#d99b00', len: 0.42, minD: 5, maxD: 110, value: 8, hp: 1, speed: 2.2, behavior: 'school', weight: 3, desc: '性格开朗，最大的梦想是被做成糖醋的。' },
   { id: 'mackerel', name: '鲭鱼', map: 'bay', shape: 'fish', color: '#6fb3c9', color2: '#22495c', len: 0.58, minD: 20, maxD: 150, value: 12, hp: 2, speed: 3.0, behavior: 'cruise', weight: 3, desc: '身上的条纹是它自己画的，为了显瘦。' },
-  { id: 'puffer', name: '河豚', map: 'bay', shape: 'round', color: '#f2c572', color2: '#a3702c', len: 0.52, minD: 40, maxD: 190, value: 15, hp: 2, speed: 1.0, behavior: 'cruise', weight: 2, desc: '生气时会膨胀，和你老板一模一样。' },
+  { id: 'puffer', name: '河豚', map: 'bay', shape: 'round', color: '#f2c572', color2: '#a3702c', len: 0.52, minD: 40, maxD: 190, value: 15, hp: 3, speed: 1.0, behavior: 'cruise', weight: 2, desc: '生气时会膨胀，和你老板一模一样。' },
   { id: 'jelly', name: '水母', map: 'bay', shape: 'jelly', color: '#ff9ad5', color2: '#ffd1ec', len: 0.46, minD: 25, maxD: 400, value: -25, hp: 1, speed: 0.5, behavior: 'cruise', weight: 1.5, special: 'jelly', desc: '别打它！它只是一坨有梦想的果冻。打中会被罚款。' },
-  { id: 'snapper', name: '真鲷', map: 'bay', shape: 'fish', color: '#ff6b6b', color2: '#a82c22', len: 0.72, minD: 60, maxD: 210, value: 20, hp: 2, speed: 2.4, behavior: 'cruise', weight: 2.5, desc: '喜庆的红色，过年时身价翻倍，平时装低调。' },
-  { id: 'eel', name: '海鳗', map: 'bay', shape: 'long', color: '#7a8f4e', color2: '#39481d', len: 1.5, minD: 90, maxD: 260, value: 26, hp: 2, speed: 1.8, behavior: 'hunt', weight: 2, desc: '滑溜溜的，连交税都能滑过去。它对你的鱼钩也很感兴趣。' },
-  { id: 'ray', name: '魔鬼鱼', map: 'bay', shape: 'flat', color: '#6c7a89', color2: '#333d48', len: 1.2, minD: 120, maxD: 290, value: 34, hp: 2, speed: 1.4, behavior: 'cruise', weight: 2, desc: '名字很凶，其实是个社恐，每天在海底扮演地毯。' },
-  { id: 'grouper', name: '石斑鱼', map: 'bay', shape: 'fish', color: '#b08850', color2: '#553d1e', len: 0.95, minD: 150, maxD: 330, value: 44, hp: 3, speed: 1.2, behavior: 'cruise', weight: 2, desc: '表情永远像刚看完你的年终总结。' },
-  { id: 'shark', name: '小鲨鱼', map: 'bay', shape: 'shark', color: '#8a9ba8', color2: '#dfe6ea', len: 1.6, minD: 180, maxD: 360, value: 58, hp: 3, speed: 3.6, behavior: 'dart', weight: 1.6, desc: '自称是大鲨鱼，只是「还没发育」。冲刺时是真的快。' },
-  { id: 'octo', name: '章鱼', map: 'bay', shape: 'squid', color: '#e0617a', color2: '#96293d', len: 0.92, minD: 200, maxD: 390, value: 66, hp: 3, speed: 1.0, behavior: 'cruise', weight: 1.6, desc: '有三颗心，但没有一颗用来爱你。' },
-  { id: 'marlin', name: '旗鱼', map: 'bay', shape: 'narwhal', color: '#3d6fb6', color2: '#16305a', len: 2.2, minD: 250, maxD: 400, value: 88, hp: 3, speed: 4.2, behavior: 'dart', weight: 1.4, desc: '海里最快的鱼，然而还是被你的鱼钩追上了。' },
-  { id: 'lantern', name: '灯笼鱼', map: 'bay', shape: 'angler', color: '#4b3a5a', color2: '#ffe066', len: 0.7, minD: 300, maxD: 400, value: 118, hp: 3, speed: 0.9, behavior: 'hunt', weight: 1.3, glow: true, desc: '自带手电筒，全海唯一不怕停电的鱼。' },
-  { id: 'goldfish', name: '镇长的金鱼', map: 'bay', shape: 'fish', color: '#ffb300', color2: '#e06200', len: 1.25, minD: 340, maxD: 400, value: 420, hp: 4, speed: 2.0, behavior: 'dart', weight: 0, special: 'rare', desc: '镇长三年前在这里「放生」的。它现在比镇长还胖，而且更受欢迎。' },
+  { id: 'snapper', name: '真鲷', map: 'bay', shape: 'fish', color: '#ff6b6b', color2: '#a82c22', len: 0.72, minD: 60, maxD: 210, value: 20, hp: 4, speed: 2.4, behavior: 'cruise', weight: 2.5, desc: '喜庆的红色，过年时身价翻倍，平时装低调。' },
+  { id: 'eel', name: '海鳗', map: 'bay', shape: 'long', color: '#7a8f4e', color2: '#39481d', len: 1.5, minD: 90, maxD: 260, value: 26, hp: 5, speed: 1.8, behavior: 'hunt', weight: 2, desc: '滑溜溜的，连交税都能滑过去。它对你的鱼钩也很感兴趣。' },
+  { id: 'ray', name: '魔鬼鱼', map: 'bay', shape: 'flat', color: '#6c7a89', color2: '#333d48', len: 1.2, minD: 120, maxD: 290, value: 34, hp: 8, speed: 1.4, behavior: 'cruise', weight: 2, desc: '名字很凶，其实是个社恐，每天在海底扮演地毯。' },
+  { id: 'grouper', name: '石斑鱼', map: 'bay', shape: 'fish', color: '#b08850', color2: '#553d1e', len: 0.95, minD: 150, maxD: 330, value: 44, hp: 9, speed: 1.2, behavior: 'cruise', weight: 2, desc: '表情永远像刚看完你的年终总结。' },
+  { id: 'shark', name: '小鲨鱼', map: 'bay', shape: 'shark', color: '#8a9ba8', color2: '#dfe6ea', len: 1.6, minD: 180, maxD: 360, value: 58, hp: 10, speed: 3.6, behavior: 'dart', weight: 1.6, desc: '自称是大鲨鱼，只是「还没发育」。冲刺时是真的快。' },
+  { id: 'octo', name: '章鱼', map: 'bay', shape: 'squid', color: '#e0617a', color2: '#96293d', len: 0.92, minD: 200, maxD: 390, value: 66, hp: 10, speed: 1.0, behavior: 'cruise', weight: 1.6, desc: '有三颗心，但没有一颗用来爱你。' },
+  { id: 'marlin', name: '旗鱼', map: 'bay', shape: 'narwhal', color: '#3d6fb6', color2: '#16305a', len: 2.2, minD: 250, maxD: 400, value: 88, hp: 11, speed: 4.2, behavior: 'dart', weight: 1.4, desc: '海里最快的鱼，然而还是被你的鱼钩追上了。' },
+  { id: 'lantern', name: '灯笼鱼', map: 'bay', shape: 'angler', color: '#4b3a5a', color2: '#ffe066', len: 0.7, minD: 300, maxD: 400, value: 118, hp: 12, speed: 0.9, behavior: 'hunt', weight: 1.3, glow: true, desc: '自带手电筒，全海唯一不怕停电的鱼。' },
+  { id: 'goldfish', name: '镇长的金鱼', map: 'bay', shape: 'fish', color: '#ffb300', color2: '#e06200', len: 1.25, minD: 340, maxD: 400, value: 420, hp: 14, speed: 2.0, behavior: 'dart', weight: 0, special: 'rare', desc: '镇长三年前在这里「放生」的。它现在比镇长还胖，而且更受欢迎。' },
 
   // ================= 极光冰海 =================
   { id: 'cod', name: '北极鳕', map: 'ice', shape: 'fish', color: '#c9d6df', color2: '#5e7484', len: 0.5, minD: 0, maxD: 130, value: 18, hp: 1, speed: 2.0, behavior: 'school', weight: 3, desc: '耐寒体质，冬天从不穿秋裤，令人担忧。' },
   { id: 'icefish', name: '冰鱼', map: 'ice', shape: 'fish', color: '#e8fbff', color2: '#93d4e8', len: 0.5, minD: 10, maxD: 170, value: 24, hp: 1, speed: 2.8, behavior: 'dart', weight: 3, glow: true, desc: '血是透明的，心也是。心思一眼就能看穿。' },
-  { id: 'frozen', name: '冰封鱼', map: 'ice', shape: 'fish', color: '#7fb3d5', color2: '#28536f', len: 0.82, minD: 40, maxD: 260, value: 44, hp: 4, speed: 0.5, behavior: 'cruise', weight: 2.4, special: 'ice', desc: '被冻在冰块里了还在游，敬业精神感动全海。需要多打几枪。' },
+  { id: 'frozen', name: '冰封鱼', map: 'ice', shape: 'fish', color: '#7fb3d5', color2: '#28536f', len: 0.82, minD: 40, maxD: 260, value: 44, hp: 6, speed: 0.5, behavior: 'cruise', weight: 2.4, special: 'ice', desc: '被冻在冰块里了还在游，敬业精神感动全海。需要多打几枪。' },
   { id: 'gjelly', name: '荧光水母', map: 'ice', shape: 'jelly', color: '#7dffcf', color2: '#c9fff0', len: 0.55, minD: 30, maxD: 600, value: -55, hp: 1, speed: 0.4, behavior: 'cruise', weight: 1.5, special: 'jelly', glow: true, desc: '在黑暗中发出温柔的光。打中罚得比普通水母更狠，温柔是有代价的。' },
-  { id: 'eeel', name: '电鳗', map: 'ice', shape: 'long', color: '#f4e04d', color2: '#4a3f00', len: 1.8, minD: 80, maxD: 520, value: 50, hp: 2, speed: 1.6, behavior: 'hunt', weight: 1.6, special: 'eel', glow: true, desc: '上升时钩到它会被电一下，甩掉两条已钓到的鱼。摸一下，醒脑提神。' },
-  { id: 'narwhal', name: '独角鲸', map: 'ice', shape: 'narwhal', color: '#9aa9b8', color2: '#44515e', len: 2.8, minD: 150, maxD: 360, value: 80, hp: 3, speed: 2.2, behavior: 'cruise', weight: 1.8, desc: '海洋里的独角兽。角其实是一颗牙，所以它每天刷牙要刷两米。' },
-  { id: 'gsquid', name: '发光乌贼', map: 'ice', shape: 'squid', color: '#5ad1ff', color2: '#07506f', len: 1.0, minD: 180, maxD: 460, value: 74, hp: 3, speed: 1.8, behavior: 'dart', weight: 1.8, glow: true, desc: '会喷发光墨汁，蹦迪时是全场焦点。' },
-  { id: 'sleeper', name: '格陵兰睡鲨', map: 'ice', shape: 'shark', color: '#5b5f66', color2: '#9aa0a8', len: 2.6, minD: 250, maxD: 520, value: 115, hp: 5, speed: 0.9, behavior: 'hunt', weight: 1.4, desc: '寿命能到 400 岁，退休金能把养老系统领破产。它游得很慢，但它不会停。' },
-  { id: 'angler', name: '深海鮟鱇', map: 'ice', shape: 'angler', color: '#2b2140', color2: '#8affff', len: 1.1, minD: 300, maxD: 600, value: 130, hp: 4, speed: 0.8, behavior: 'hunt', weight: 1.4, glow: true, desc: '头上挂着小灯钓别的鱼。同行，是冤家。' },
-  { id: 'ghostray', name: '幽灵鳐', map: 'ice', shape: 'flat', color: '#b9a6ff', color2: '#4a30a8', len: 1.8, minD: 350, maxD: 600, value: 145, hp: 4, speed: 1.5, behavior: 'cruise', weight: 1.3, glow: true, desc: '半透明，飘来飘去，据说是一只没交完房贷的鳐鱼的灵魂。' },
-  { id: 'codking', name: '冰川鳕王', map: 'ice', shape: 'fish', color: '#dfe9f3', color2: '#2f5f93', len: 2.3, minD: 400, maxD: 600, value: 175, hp: 5, speed: 1.8, behavior: 'cruise', weight: 1.2, desc: '北极鳕的老板。开会时间比游泳时间多。' },
-  { id: 'fishking', name: '鱼王', map: 'ice', shape: 'king', color: '#ffcf33', color2: '#a87400', len: 4.4, minD: 500, maxD: 590, value: 1400, hp: 14, speed: 1.2, behavior: 'cruise', weight: 0, special: 'legend', glow: true, desc: '传说中的鱼王。戴着一副假牙——那是海爷爷二十年前丢的。' },
+  { id: 'eeel', name: '电鳗', map: 'ice', shape: 'long', color: '#f4e04d', color2: '#4a3f00', len: 1.8, minD: 80, maxD: 520, value: 50, hp: 5, speed: 1.6, behavior: 'hunt', weight: 1.6, special: 'eel', glow: true, desc: '上升时钩到它会被电一下，甩掉两条已钓到的鱼。摸一下，醒脑提神。' },
+  { id: 'narwhal', name: '独角鲸', map: 'ice', shape: 'narwhal', color: '#9aa9b8', color2: '#44515e', len: 2.8, minD: 150, maxD: 360, value: 80, hp: 8, speed: 2.2, behavior: 'cruise', weight: 1.8, desc: '海洋里的独角兽。角其实是一颗牙，所以它每天刷牙要刷两米。' },
+  { id: 'gsquid', name: '发光乌贼', map: 'ice', shape: 'squid', color: '#5ad1ff', color2: '#07506f', len: 1.0, minD: 180, maxD: 460, value: 74, hp: 9, speed: 1.8, behavior: 'dart', weight: 1.8, glow: true, desc: '会喷发光墨汁，蹦迪时是全场焦点。' },
+  { id: 'sleeper', name: '格陵兰睡鲨', map: 'ice', shape: 'shark', color: '#5b5f66', color2: '#9aa0a8', len: 2.6, minD: 250, maxD: 520, value: 115, hp: 11, speed: 0.9, behavior: 'hunt', weight: 1.4, desc: '寿命能到 400 岁，退休金能把养老系统领破产。它游得很慢，但它不会停。' },
+  { id: 'angler', name: '深海鮟鱇', map: 'ice', shape: 'angler', color: '#2b2140', color2: '#8affff', len: 1.1, minD: 300, maxD: 600, value: 130, hp: 11, speed: 0.8, behavior: 'hunt', weight: 1.4, glow: true, desc: '头上挂着小灯钓别的鱼。同行，是冤家。' },
+  { id: 'ghostray', name: '幽灵鳐', map: 'ice', shape: 'flat', color: '#b9a6ff', color2: '#4a30a8', len: 1.8, minD: 350, maxD: 600, value: 145, hp: 12, speed: 1.5, behavior: 'cruise', weight: 1.3, glow: true, desc: '半透明，飘来飘去，据说是一只没交完房贷的鳐鱼的灵魂。' },
+  { id: 'codking', name: '冰川鳕王', map: 'ice', shape: 'fish', color: '#dfe9f3', color2: '#2f5f93', len: 2.3, minD: 400, maxD: 600, value: 175, hp: 13, speed: 1.8, behavior: 'cruise', weight: 1.2, desc: '北极鳕的老板。开会时间比游泳时间多。' },
+  { id: 'fishking', name: '鱼王', map: 'ice', shape: 'king', color: '#ffcf33', color2: '#a87400', len: 4.4, minD: 500, maxD: 590, value: 1400, hp: 20, speed: 1.2, behavior: 'cruise', weight: 0, special: 'legend', glow: true, desc: '传说中的鱼王。戴着一副假牙——那是海爷爷二十年前丢的。' },
 ];
 
 export const speciesById: Record<string, Species> = Object.fromEntries(SPECIES.map((s) => [s.id, s]));
