@@ -1,0 +1,24 @@
+import puppeteer from 'file:///C:/Users/guoxiaoyan/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js';
+import path from 'node:path';
+import { sleep } from './lib.mjs';
+const SHOTS = path.resolve('.smoke/shots');
+const browser = await puppeteer.launch({ executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe', headless:'new', args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const page = await browser.newPage();
+await page.setViewport({ width:430, height:900, deviceScaleFactor:2 });
+await page.goto('file:///' + path.resolve('dist/index.html').replace(/\\/g,'/') + '#debug', {waitUntil:'load'});
+await page.evaluate(() => localStorage.clear());
+await page.reload({waitUntil:'load'}); await sleep(900);
+await page.evaluate(()=>{const k='absurd-fishing-3d-save-v2';const s=JSON.parse(localStorage.getItem(k));s.unlocked=['bay','ice'];s.map='ice';s.trips=8;s.money=12000;s.maxDepth={bay:128,ice:320};s.fired=['prologue','kevin','north','ending','intro','introAfterFirst','firstTrip','d60','money400','trip3','jelly1','d120','bottle1','species7','d200','goldfish','iceHint','unlockReady','iceUnlocked','iceTrip1','ice300','legend','allSpecies'];s.queue=[];localStorage.setItem(k,JSON.stringify(s));});
+await page.reload({waitUntil:'load'}); await sleep(1000);
+await page.evaluate(()=>{[...document.querySelectorAll('button')].find(x=>/开始|继续/.test(x.textContent||''))?.click()});
+await sleep(600);
+await page.evaluate(()=>{[...document.querySelectorAll('button')].find(x=>(x.textContent||'').includes('跳过'))?.click()});
+await sleep(1200);
+console.log('ice title:', JSON.stringify(await page.evaluate(()=>{const b=document.querySelector('.hud-map b');const r=b.getBoundingClientRect();return {text:b.textContent,size:getComputedStyle(b).fontSize,w:Math.round(r.width),y:Math.round(r.y)};})));
+await page.screenshot({path:path.join(SHOTS,'C6-ice-title.png')});
+// 下潜后标题应淡出
+await page.evaluate(()=>document.querySelector('.stage')?.click());
+await sleep(6000);
+console.log('descent:', JSON.stringify(await page.evaluate(()=>{const m=document.querySelector('.hud-map');return {phase:document.querySelector('.stage')?.getAttribute('data-phase'),op:getComputedStyle(m).opacity};})));
+await page.screenshot({path:path.join(SHOTS,'C7-descent.png')});
+await browser.close();

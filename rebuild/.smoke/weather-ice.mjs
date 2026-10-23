@@ -1,0 +1,32 @@
+import puppeteer from 'file:///C:/Users/guoxiaoyan/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js';
+import path from 'node:path';
+const CHROME='C:/Program Files/Google/Chrome/Application/chrome.exe';
+const HTML=path.resolve('dist/index.html');
+const SHOTS=path.resolve('.smoke/shots');
+const KEY='absurd-fishing-3d-save-v2';
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+const browser=await puppeteer.launch({executablePath:CHROME,headless:'new',args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const page=await browser.newPage();
+await page.setViewport({width:430,height:900,deviceScaleFactor:2});
+const errs=[];
+page.on('pageerror',(e)=>errs.push(e.message));
+await page.goto('file:///'+HTML.replace(/\\/g,'/')+'#debug',{waitUntil:'load'});
+await page.evaluate(()=>localStorage.clear());
+await page.reload({waitUntil:'load'});
+await sleep(1100);
+await page.evaluate((k)=>{const s=JSON.parse(localStorage.getItem(k));s.unlocked=['bay','ice'];s.map='ice';s.trips=3;s.up={line:7,saw:3,hook:5,lamp:4,fin:3,scope:2,slowmo:1};s.fired=['intro','introAfterFirst'];s.queue=[];localStorage.setItem(k,JSON.stringify(s));},KEY);
+await page.reload({waitUntil:'load'});
+await sleep(1000);
+for (const w of ['aurora','blizzard']) {
+  await page.evaluate((k,id)=>{const s=JSON.parse(localStorage.getItem(k));s.weather=id;localStorage.setItem(k,JSON.stringify(s));},KEY,w);
+  await page.reload({waitUntil:'load'});
+  await sleep(1000);
+  await page.evaluate(()=>{const b=[...document.querySelectorAll('button')].find(x=>(x.textContent||'').includes('继续')||(x.textContent||'').includes('开始'));b?.click();});
+  await sleep(1000);
+  await page.evaluate(()=>{const b=[...document.querySelectorAll('button')].find(x=>(x.textContent||'').includes('跳过'));b?.click();});
+  await sleep(600);
+  console.log(w, await page.evaluate(()=>document.querySelector('.hud-map')?.innerText.replace(/\n/g,' | ')));
+  await page.screenshot({path:path.join(SHOTS,'12'+w+'-shore.png')});
+}
+console.log('errors:',errs.length,errs.slice(0,2));
+await browser.close();

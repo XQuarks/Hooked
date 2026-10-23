@@ -1,0 +1,24 @@
+import puppeteer from 'file:///C:/Users/guoxiaoyan/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js';
+import path from 'node:path';
+const CHROME='C:/Program Files/Google/Chrome/Application/chrome.exe';
+const HTML=path.resolve('dist/index.html');
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+const browser=await puppeteer.launch({executablePath:CHROME,headless:'new',args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const page=await browser.newPage();
+await page.setViewport({width:430,height:900,deviceScaleFactor:1});
+await page.goto('file:///'+HTML.replace(/\\/g,'/')+'#debug',{waitUntil:'load'});
+await page.evaluate(()=>localStorage.clear());
+await page.reload({waitUntil:'load'});
+await sleep(1200);
+await page.evaluate(()=>{const b=[...document.querySelectorAll('button')].find(x=>/开始|继续/.test(x.textContent||''));b?.click();});
+await sleep(700);
+await page.evaluate(()=>{const b=[...document.querySelectorAll('button')].find(x=>(x.textContent||'').includes('跳过'));b?.click();});
+await sleep(700);
+await page.evaluate(()=>document.querySelector('.phone-fab')?.click());
+await sleep(800);
+console.log(JSON.stringify(await page.evaluate(()=>{
+  const r=(sel)=>{const el=document.querySelector(sel);if(!el)return null;const b=el.getBoundingClientRect();const c=getComputedStyle(el);
+    return {t:Math.round(b.top),h:Math.round(b.height),gap:c.rowGap,align:c.alignContent,disp:c.display};};
+  return {home:r('.phone-home'), grid:r('.app-grid'), icon:r('.app-icon'), note:r('.phone-note'), stat:r('.home-stat')};
+}),null,1));
+await browser.close();

@@ -1,19 +1,28 @@
-# 开发期产物（不要提交）
+# ── 依赖（约 103 MB / 数千文件，永远不要提交）──
+node_modules/
+rebuild/node_modules/
+
+# ── 构建与验证的临时产物 ──
+.verify-dist/
+dist-verify/
+rebuild/.verify-dist/
+
+# ── 无头浏览器测试截图（199 张 PNG，约 171 MB，每次跑测试都会重新生成）──
+rebuild/.smoke/shots/
+
+# ── 本地备份与历史快照（只在本机留档，不进仓库）──
+backup/
+
+# ── AI 工作区数据（项目记忆 / 会话日志）──
+.workbuddy/
+
+# ── 日志与系统文件 ──
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 编辑器 / 工具目录 ──
+.vscode/
+.idea/
 .chrome-profile*/
-shots/
-shots-v2/
-.syntaxcheck/
-.dev/*.json
-
-# 验证脚本每次跑都会新建一个 Chrome profile 目录 + 一个出图目录，
-# 跑几十次就是几十个目录 —— 全部忽略，需要看截图时自己重新跑一次。
-.dev/profile-*/
-.dev/shots-*/
-.dev/shots-probe/
-
-# 脚本中间产物（可随时重新生成）
-.dev/*-out.*
-.dev/*.log
-
-# AI 工作区数据（项目记忆 / 会话日志），不属于游戏本体
-.workbuddy-ai/

@@ -1,0 +1,16 @@
+import puppeteer from 'file:///C:/Users/guoxiaoyan/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js';
+import path from 'node:path';
+const CHROME='C:/Program Files/Google/Chrome/Application/chrome.exe';
+const target=process.argv[2];
+const browser=await puppeteer.launch({executablePath:CHROME,headless:'new',args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
+const page=await browser.newPage();
+await page.setViewport({width:430,height:900,deviceScaleFactor:1});
+page.on('console',m=>{ if(m.type()==='error') console.log('CONSOLE ERROR:', m.text().slice(0,200)); });
+page.on('pageerror',e=>console.log('PAGEERROR:', e.message.slice(0,200)));
+page.on('requestfailed',r=>console.log('REQFAIL:', r.url().slice(-80), r.failure()?.errorText));
+await page.goto('file:///'+target.replace(/\\/g,'/'),{waitUntil:'load',timeout:60000});
+await new Promise(r=>setTimeout(r,2500));
+console.log('body text:', (await page.evaluate(()=>document.body.innerText)).replace(/\n/g,' | ').slice(0,260));
+console.log('canvas:', await page.evaluate(()=>document.querySelectorAll('canvas').length));
+await page.screenshot({path:path.resolve('.smoke/shots/40-fileopen.png')});
+await browser.close();
