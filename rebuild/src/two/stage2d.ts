@@ -36,6 +36,13 @@ export class Stage2D {
   readonly kind = '2d' as const;
   canvas: HTMLCanvasElement;
   g: CanvasRenderingContext2D;
+  /**
+   * 暗角层：参数只跟屏幕尺寸有关，永远压在最顶层。
+   * 拆成独立 canvas 后只需在 resize 时画一次，主循环不必每帧再叠一层整屏混合。
+   * 画面与原来逐像素一致（同一段绘制代码、同一组色标）。
+   */
+  private vignette: HTMLCanvasElement;
+  private vg: CanvasRenderingContext2D;
   /** engine 通过它拿事件目标；2D 下就是 canvas 本身 */
   renderer: { domElement: HTMLCanvasElement; info: { render: { calls: number; triangles: number } } };
   camera: FakeCamera;
@@ -48,6 +55,8 @@ export class Stage2D {
   world: World2D | null = null;
   private backdrop = new Backdrop();
   private fishes: FishSprite[] = [];
+  /** 复用的排序缓冲：每帧不再新建数组，减少 GC 停顿 */
+  private sortBuf: FishSprite[] = [];
   private skyActors: SkySprite[] = [];
   private band: Band | null = null;
   private rawBand: Band | null = null;
@@ -84,6 +93,18 @@ export class Stage2D {
     this.canvas.style.touchAction = 'none';
     opts.container.appendChild(this.canvas);
     this.g = ctx2d(this.canvas);
+
+    // 暗角单独一层：append 在画布之后 → 自然叠在最上面，且不参与每帧重绘
+    this.vignette = makeCanvas(4, 4);
+    this.vignette.className = 'vignette';
+    this.vignette.style.position = 'absolute';
+    this.vignette.style.inset = '0';
+    this.vignette.style.width = '100%';
+    this.vignette.style.height = '100%';
+    this.vignette.style.display = 'block';
+    this.vignette.style.pointerEvents = 'none';
+    opts.container.appendChild(this.vignette);
+    this.vg = ctx2d(this.vignette);
 
     this.renderer = {
       domElement: this.canvas,
@@ -166,10 +187,19 @@ export class Stage2D {
     this.W = W;
     this.H = H;
     this.dpr = dpr;
+    // 噪点烘焙要按物理像素还原，先同步给背景层
+    this.backdrop.dpr = dpr;
     this.canvas.width = Math.round(W * dpr);
     this.canvas.height = Math.round(H * dpr);
     this.canvas.style.width = W + 'px';
     this.canvas.style.height = H + 'px';
+
+    // 暗角层跟着一起换尺寸，并重画一次（只在这里花一次代价）
+    this.vignette.width = Math.round(W * dpr);
+    this.vignette.height = Math.round(H * dpr);
+    this.vignette.style.width = W + 'px';
+    this.vignette.style.height = H + 'px';
+    this.paintVignette();
 
     this.baseScale = W / VIEW_W;
     this.cam.W = W;
@@ -285,7 +315,10 @@ export class Stage2D {
 
     // 鱼：按 z 从远到近
     if (this.fishes.length) {
-      const list = this.fishes.slice().sort((a, b) => a.root.position.z - b.root.position.z);
+      const list = this.sortBuf;
+      list.length = 0;
+      for (const f of this.fishes) list.push(f);
+      list.sort((a, b) => a.root.position.z - b.root.position.z);
       for (const f of list) f.draw(g, cam);
     }
 
@@ -461,7 +494,17 @@ export class Stage2D {
       g.restore();
     }
 
-    // 暗角：把注意力收到中间
+    // 暗角不在这里画了：它被搬到独立的 vignette 层，只在 resize 时绘制一次。
+    // 少掉每帧一次整屏渐变+混合，画面完全不变。
+  }
+
+  /** 画暗角（仅在尺寸变化时调用）。参数与色标保持原样，逐像素等价 */
+  private paintVignette() {
+    const g = this.vg;
+    const W = this.W;
+    const H = this.H;
+    g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
     const vg = g.createRadialGradient(W / 2, H * 0.46, Math.min(W, H) * 0.26, W / 2, H * 0.5, Math.max(W, H) * 0.8);
     vg.addColorStop(0, 'rgba(0,0,0,0)');
     vg.addColorStop(0.62, 'rgba(0,0,0,0.1)');
@@ -474,5 +517,6 @@ export class Stage2D {
     this.fishes.length = 0;
     this.world = null;
     this.canvas.remove();
+    this.vignette.remove();
   }
 }

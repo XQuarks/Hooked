@@ -1,26 +1,35 @@
-[02:41:37.474] goto file:///C:/Users/guoxiaoyan/Desktop/钓鱼1/rebuild/dist/index.html#debug
-[02:41:37.835] WebGL: {"ok":true,"renderer":"ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)","ver":"WebGL 2.0 (OpenGL ES 3.0 Chromium)"}
-[02:41:40.695] title: {"title":"荒唐钓鱼","startBtn":"开始游戏","canvases":1,"rootChildren":1}
-[02:41:41.436] clicked start
-[02:41:44.126] prologue cleared: true
-[02:41:44.468] cast fired -> cast
-[02:41:44.470] phase after start: cast
-[02:41:44.471] stage box: {"x":0,"y":0,"w":430,"h":900}
-[02:41:44.473] phase -> cast @0.0s
-[02:41:48.204] phase -> descent @3.7s
-[02:41:50.234] shot descent
-[02:41:53.803] phase -> turn @9.3s
-[02:41:55.496] phase -> ascent @11.0s
-[02:41:57.584] shot ascent
-[02:42:02.874] phase -> shoot @18.4s
-[02:42:02.876] shoot debug: {"phase":"shoot","weather":"clear","fish":24,"sea":0.8,"aim":[-0.74,4.28],"focusY":2.74,"camY":4.24,"air":[{"sp":"sardine","x":0.4,"y":0.5,"hp":1,"delay":0.04,"state":"fly"},{"sp":"yellow","x":0.66,"y":0.5,"hp":1,"delay":0.09,"state":"fly"}],"kills":{},"gross":0,"shots":0}
-[02:42:02.967] shoot debug: {"phase":"shoot","weather":"clear","fish":24,"sea":0.8,"aim":[-0.74,4.28],"focusY":2.74,"camY":4.24,"air":[{"sp":"sardine","x":0.4,"y":0.5,"hp":1,"delay":0.04,"state":"fly"},{"sp":"yellow","x":0.66,"y":0.5,"hp":1,"delay":0.09,"state":"fly"}],"kills":{},"gross":0,"shots":0}
-[02:42:03.046] shoot debug: {"phase":"shoot","weather":"clear","fish":24,"sea":0.8,"aim":[-0.74,4.28],"focusY":2.67,"camY":4.17,"air":[{"sp":"sardine","x":0.4,"y":0.5,"hp":1,"delay":-0.01,"state":"fly"},{"sp":"yellow","x":0.66,"y":0.5,"hp":1,"delay":0.04,"state":"fly"}],"kills":{},"gross":0,"shots":0}
-[02:42:04.992] shot shoot
-[02:42:09.388] phase -> idle @24.9s
-[02:42:11.040] RESULT SHEET:
-$21
-阳光湾 · 最深 18m · 上钩 2 条
+[07:20:49.591] goto file:///C:/Users/guoxiaoyan/workbuddy-ai/钓鱼/rebuild/dist/index.html#debug
+[07:20:49.927] WebGL: {"ok":true,"renderer":"ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)","ver":"WebGL 2.0 (OpenGL ES 3.0 Chromium)"}
+[07:20:52.741] title: {"title":"荒唐钓鱼","startBtn":"开始游戏","canvases":2,"rootChildren":1}
+[07:20:53.370] clicked start
+[07:20:56.009] prologue cleared: true
+[07:20:56.346] cast fired -> cast
+[07:20:56.348] phase after start: cast
+[07:20:56.358] stage box: {"x":0,"y":0,"w":430,"h":900}
+[07:20:56.362] phase -> cast @0.0s
+[07:20:58.282] phase -> descent @1.9s
+[07:21:00.567] shot descent
+[07:21:02.700] phase -> turn @6.3s
+[07:21:04.034] phase -> ascent @7.7s
+[07:21:05.532] shot ascent
+[07:21:07.815] phase -> shoot @11.5s
+[07:21:07.820] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.94,"camY":4.44,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.12,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.17,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.22,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:07.896] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.9,"camY":4.4,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.1,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.15,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.2,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:07.974] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.87,"camY":4.37,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.09,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.14,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.19,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:08.048] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.84,"camY":4.34,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.07,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.12,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.17,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:08.132] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.84,"camY":4.34,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.07,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.12,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.17,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:08.203] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.84,"camY":4.34,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.07,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.12,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.17,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:08.268] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.84,"camY":4.34,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.07,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.12,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.17,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:08.350] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.82,"camY":4.32,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.06,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.11,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.16,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:08.431] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.82,"camY":4.32,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.06,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.11,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.16,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:08.503] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.8,"camY":4.3,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":0.04,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.09,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.14,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:08.580] shoot debug: {"phase":"shoot","weather":"clear","fish":25,"sea":0.8,"aim":[-2.12,3.79],"focusY":2.74,"camY":4.24,"air":[{"sp":"yellow","x":-0.12,"y":0.5,"hp":1,"delay":-0.01,"state":"fly"},{"sp":"yellow","x":-0.42,"y":0.5,"hp":1,"delay":0.04,"state":"fly"},{"sp":"yellow","x":-0.01,"y":0.5,"hp":1,"delay":0.09,"state":"fly"}],"kills":{},"gross":0,"shots":0}
+[07:21:10.151] shot shoot
+[07:21:13.634] phase -> idle @17.3s
+[07:21:15.137] RESULT SHEET:
+$55
+阳光湾 · 最深 12m · 上钩 3 条
+🔥 最高 3 连
 📱 本局新消息 ×4
 老妈
 儿子，你爷爷的船我让人擦干净了，今天就给我出海！别又宅在家里打游戏。
@@ -28,20 +37,18 @@ $21
 钓不到鱼别回来吃饭。
 点开看全部 ›
 毛收入
-+$21
++$55
 渔获
 小黄鱼NEW
-×1
-沙丁鱼NEW
-×1
+×3
 聊胜于无，至少你没打水母。
 收下 💰
-[02:42:11.982] result-msgs jump: {"phone":true,"sheet":false}
-[02:42:13.910] clicked 收下: false
-[02:42:16.366] result cleared: true
-[02:42:17.378] phone: clicked
-[02:42:20.506] phone info: {"icons":11,"bar":"open"}
-[02:42:23.396] dex opened: true
-[02:42:23.398] dex info: {"grid":14,"imgs":14}
-[02:42:25.638] save state: {"money":21,"trips":1,"caught":2,"bestTrip":21,"bestCombo":2}
-[02:42:25.638] summary: turn=true ascent=true shoot=true clicks=3 errors=0
+[07:21:16.058] result-msgs jump: {"phone":true,"sheet":false}
+[07:21:17.722] clicked 收下: false
+[07:21:19.795] result cleared: true
+[07:21:20.833] phone: clicked
+[07:21:23.283] phone info: {"icons":11,"bar":"open"}
+[07:21:25.942] dex opened: true
+[07:21:25.944] dex info: {"grid":14,"imgs":14}
+[07:21:28.051] save state: {"money":55,"trips":1,"caught":1,"bestTrip":55,"bestCombo":3}
+[07:21:28.051] summary: turn=true ascent=true shoot=true clicks=5 errors=0

@@ -1,4 +1,4 @@
-import { CSSProperties, useRef } from 'react';
+import { CSSProperties, useMemo, useRef } from 'react';
 import { HudState } from '../game/engine';
 import { MAPS, currentWeaponName, hotName } from '../game/helpers';
 import { BOTTLES, weatherById } from '../game/data';
@@ -25,14 +25,18 @@ export function Hud({ hud, save, pointer, badge, badgeAny, ringing, onPause, onA
   const fishing = hud.phase !== 'idle' && !casting;
   const map = MAPS[save.map];
   const weather = weatherById[weatherOf(save)];
-  const line = Math.min(upVal(save, 'line'), map.maxDepth);
   const ratio = hud.maxDepth ? Math.min(1, hud.depth / hud.maxDepth) : 0;
-  const goal = mainGoal(save);
-  const side = sideGoal(save);
-  const bottleMarks =
-    hud.phase !== 'idle' && hud.maxDepth > 0
-      ? BOTTLES.filter((b) => b.map === save.map && !save.bottles.includes(b.id) && b.depth <= hud.maxDepth)
-      : [];
+  // HUD 每 6 帧刷一次，但下面这几项只跟存档有关：缓存起来别跟着重算
+  const line = useMemo(() => Math.min(upVal(save, 'line'), map.maxDepth), [save, map.maxDepth]);
+  const goal = useMemo(() => mainGoal(save), [save]);
+  const side = useMemo(() => sideGoal(save), [save]);
+  const bottleMarks = useMemo(
+    () =>
+      hud.phase !== 'idle' && hud.maxDepth > 0
+        ? BOTTLES.filter((b) => b.map === save.map && !save.bottles.includes(b.id) && b.depth <= hud.maxDepth)
+        : [],
+    [hud.phase, hud.maxDepth, save.map, save.bottles],
+  );
 
   // 进出场：两组 UI 各自朝屏幕底部滑出/滑入，并做透明度过渡
   const shore = usePresence(!fishing && !casting);

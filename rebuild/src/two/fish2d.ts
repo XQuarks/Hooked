@@ -57,6 +57,13 @@ export class FishSprite {
   private glowPhase = Math.random() * 6.28;
   /** 命中后的挤压回弹（squash & stretch），1 = 无 */
   private squash = 1;
+  /**
+   * 身体纵向渐变缓存：配色只由鱼种决定，坐标只由像素高度 H 决定。
+   * H 不变时复用同一个渐变对象 —— 绘制结果完全相同，只是不再每帧重建。
+   */
+  private bodyGrad: CanvasGradient | null = null;
+  private bodyGradH = -1;
+  private bodyGradCtx: CanvasRenderingContext2D | null = null;
 
   constructor(sp: Species) {
     this.sp = sp;
@@ -168,11 +175,18 @@ export class FishSprite {
     g.bezierCurveTo(px(0.34), H * f.belly * 0.94, px(0.72), H * 0.6, half, H * f.snout * 0.62);
     g.closePath();
 
-    const grad = g.createLinearGradient(0, -H * 1.1, 0, H * 1.05);
-    grad.addColorStop(0, back);
-    grad.addColorStop(0.34, mid);
-    grad.addColorStop(0.66, mixHex(mid, belly, 0.55));
-    grad.addColorStop(1, belly);
+    // 同一条鱼、同一个屏幕尺寸 → 渐变完全一样，命中缓存后直接复用
+    let grad = this.bodyGrad;
+    if (!grad || this.bodyGradCtx !== g || this.bodyGradH !== H) {
+      grad = g.createLinearGradient(0, -H * 1.1, 0, H * 1.05);
+      grad.addColorStop(0, back);
+      grad.addColorStop(0.34, mid);
+      grad.addColorStop(0.66, mixHex(mid, belly, 0.55));
+      grad.addColorStop(1, belly);
+      this.bodyGrad = grad;
+      this.bodyGradH = H;
+      this.bodyGradCtx = g;
+    }
     g.fillStyle = grad;
     g.fill();
     // 暗描边：不管背景多亮多暗，鱼的轮廓都在

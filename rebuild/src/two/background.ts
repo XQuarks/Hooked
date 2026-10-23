@@ -27,7 +27,24 @@ export class Backdrop {
   /** 浪高倍率：天气驱动（0.55 平静 ~ 2.1 雷雨） */
   wave = 1;
   private noise = noiseTile();
-  private noisePat: CanvasPattern | null = null;
+
+  // ---- 下面全是缓存：只复用同一批绘制参数，不改任何像素 ----
+  /** 由 Stage2D 在 resize 时同步，噪点烘焙要按物理像素还原 */
+  dpr = 1;
+  /** 统一光照层：4 个色标都是常量，只随画布高度变 */
+  private lightGrad: CanvasGradient | null = null;
+  private lightGradH = -1;
+  private lightCtx: CanvasRenderingContext2D | null = null;
+  /** 焦散：按序号缓存 alpha=1 的渐变，绘制时用 globalAlpha 还原透明度 */
+  private causticGrads: (CanvasGradient | null)[] = [];
+  private causticR: number[] = [];
+  private causticColor = '';
+  private causticCtx: CanvasRenderingContext2D | null = null;
+  /** 噪点：预烘焙成物理像素尺寸的位图，每帧只做一次 1:1 blit */
+  private grainBaked: HTMLCanvasElement | null = null;
+  private grainW = -1;
+  private grainH = -1;
+  private grainDpr = -1;
 
   /** 背景：必须在鱼之前画 */
   paintBack(
@@ -57,12 +74,18 @@ export class Backdrop {
       if (this.quality === 'high') this.caustics(g, cam, t, band, depth);
 
       // 统一光照方向：顶亮底暗。这一层把零散元素的明暗拉回同一套光里
-      const lg = g.createLinearGradient(0, 0, 0, H);
-      lg.addColorStop(0, rgba('#e6feff', 0.14));
-      lg.addColorStop(0.26, rgba('#ffffff', 0));
-      lg.addColorStop(0.62, rgba('#001018', 0));
-      lg.addColorStop(1, rgba('#001018', 0.4));
-      g.fillStyle = lg;
+      // 四个色标全是常量，只有画布高度会影响它 → 缓存，不必每帧重建
+      if (!this.lightGrad || this.lightCtx !== g || this.lightGradH !== H) {
+        const lg = g.createLinearGradient(0, 0, 0, H);
+        lg.addColorStop(0, rgba('#e6feff', 0.14));
+        lg.addColorStop(0.26, rgba('#ffffff', 0));
+        lg.addColorStop(0.62, rgba('#001018', 0));
+        lg.addColorStop(1, rgba('#001018', 0.4));
+        this.lightGrad = lg;
+        this.lightCtx = g;
+        this.lightGradH = H;
+      }
+      g.fillStyle = this.lightGrad;
       g.fillRect(0, 0, W, H);
     }
 
@@ -693,9 +716,17 @@ export class Backdrop {
     const dk = deepK(depth);
     if (dk < 0.2) return;
     const { W, H, scale } = cam;
-    // 柔光斑而不是细线：线看起来像擦痕，光斑才像阳光透过水面聚焦
     g.save();
     g.globalCompositeOperation = 'lighter';
+
+    // 水色变了就整批作废（颜色写在渐变里，不能只换一部分）
+    if (this.causticCtx !== g || this.causticColor !== band.ray) {
+      this.causticGrads.length = 0;
+      this.causticR.length = 0;
+      this.causticColor = band.ray;
+      this.causticCtx = g;
+    }
+
     for (let i = 0; i < 16; i++) {
       const seed = i * 7.31;
       const bx = hash1(seed) * W + Math.sin(t * 0.22 + seed) * 12;
@@ -704,13 +735,21 @@ export class Backdrop {
       const ry = rx * (0.3 + hash1(seed + 3) * 0.28);
       const a = (0.035 + hash1(seed + 4) * 0.055) * dk * (0.5 + 0.5 * Math.sin(t * 0.7 + seed));
       if (a <= 0.004) continue;
-      const gr = g.createRadialGradient(0, 0, 0, 0, 0, rx);
-      gr.addColorStop(0, rgba(band.ray, a));
-      gr.addColorStop(0.55, rgba(band.ray, a * 0.45));
-      gr.addColorStop(1, rgba(band.ray, 0));
+      // 缓存的渐变固定 alpha=1，绘制时用 globalAlpha 乘回去。
+      // 原写法三个色标是 (a, 0.45a, 0)，每个都同乘 a → 与 (1, 0.45, 0) × globalAlpha=a 逐像素一致。
+      let gr = this.causticGrads[i];
+      if (!gr || Math.abs(this.causticR[i] - rx) > 0.5) {
+        gr = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+        gr.addColorStop(0, rgba(band.ray, 1));
+        gr.addColorStop(0.55, rgba(band.ray, 0.45));
+        gr.addColorStop(1, rgba(band.ray, 0));
+        this.causticGrads[i] = gr;
+        this.causticR[i] = rx;
+      }
       g.save();
       g.translate(bx, by);
       g.scale(1, ry / rx);
+      g.globalAlpha = a;
       g.fillStyle = gr;
       g.beginPath();
       g.arc(0, 0, rx, 0, Math.PI * 2);
@@ -907,14 +946,36 @@ export class Backdrop {
 
   /** 颗粒：压掉大面积渐变的「塑料感」 */
   private grain(g: CanvasRenderingContext2D, cam: Cam) {
-    if (!this.noisePat && this.noise) {
-      this.noisePat = g.createPattern(this.noise, 'repeat');
+    const W = cam.W;
+    const H = cam.H;
+    const dpr = this.dpr;
+    // 尺寸或像素比变了才重新烘焙（resize 时一次）
+    if (!this.grainBaked || this.grainW !== W || this.grainH !== H || this.grainDpr !== dpr) {
+      if (!this.noise) return;
+      const off = document.createElement('canvas');
+      off.width = Math.max(1, Math.round(W * dpr));
+      off.height = Math.max(1, Math.round(H * dpr));
+      const og = off.getContext('2d');
+      if (!og) return;
+      // 与原来逐帧做的事完全一致：同样的变换、同样的 pattern、同样的 alpha
+      og.setTransform(dpr, 0, 0, dpr, 0, 0);
+      og.globalAlpha = 0.5;
+      const pat = og.createPattern(this.noise, 'repeat');
+      if (!pat) return;
+      og.fillStyle = pat;
+      og.fillRect(0, 0, W, H);
+      this.grainBaked = off;
+      this.grainW = W;
+      this.grainH = H;
+      this.grainDpr = dpr;
     }
-    if (!this.noisePat) return;
+    const baked = this.grainBaked;
+    if (!baked) return;
+    // 烘焙结果已经是最终像素，1:1 贴上去即可
     g.save();
-    g.globalAlpha = 0.5;
-    g.fillStyle = this.noisePat;
-    g.fillRect(0, 0, cam.W, cam.H);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.drawImage(baked, 0, 0);
     g.restore();
   }
 }

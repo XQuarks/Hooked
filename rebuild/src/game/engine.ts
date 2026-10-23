@@ -259,6 +259,8 @@ export class Engine {
   hudTimer = 0;
 
   private ro: ResizeObserver;
+  /** resize 合并定时器：手机上地址栏收缩会连发好几次回调 */
+  private roT = 0;
   private disposed = false;
   private lastAbove = false;
 
@@ -282,7 +284,11 @@ export class Engine {
     window.addEventListener('keydown', this.onKey);
     window.addEventListener('keyup', this.onKeyUp);
 
-    this.ro = new ResizeObserver(() => this.stage.resize());
+    // 合并连续回调：重建 canvas 位图在手机上要 5~30ms，连发会卡一下
+    this.ro = new ResizeObserver(() => {
+      window.clearTimeout(this.roT);
+      this.roT = window.setTimeout(() => this.stage.resize(), 80);
+    });
     this.ro.observe(container);
 
     this.last = performance.now();
@@ -296,6 +302,7 @@ export class Engine {
   destroy() {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
+    window.clearTimeout(this.roT);
     this.ro.disconnect();
     const el = this.stage.renderer.domElement;
     el.removeEventListener('pointerdown', this.onDown);
