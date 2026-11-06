@@ -1,0 +1,2 @@
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$p=Join-Path '%~dp0' '.server.pid'; if(Test-Path -LiteralPath $p){$webPid=[int](Get-Content -LiteralPath $p -Raw); $webProc=Get-CimInstance Win32_Process -Filter ('ProcessId='+$webPid); if($webProc -and $webProc.CommandLine -like ('*'+(Join-Path '%~dp0' 'serve.ps1')+'*')){Stop-Process -Id $webPid -ErrorAction SilentlyContinue}; Remove-Item -LiteralPath $p -ErrorAction SilentlyContinue}"

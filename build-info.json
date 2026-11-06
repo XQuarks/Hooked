@@ -1,0 +1,87 @@
+{
+  "build_utc": "2026-11-05T14:32:29.663709+00:00",
+  "engine": "Godot 4.7.2 stable",
+  "preset": "Web GitHub Pages",
+  "release": true,
+  "threads": false,
+  "max_canvas": [
+    540,
+    1134
+  ],
+  "font_codepoints": 1722,
+  "font_missing_required": [],
+  "files": {
+    "index.apple-touch-icon.png": {
+      "bytes": 3803,
+      "sha256": "eb4bb98c17262c7e0233e920894ab02a8a4e5d51042de4043d16d962a405534a"
+    },
+    "index.audio.position.worklet.js": {
+      "bytes": 2973,
+      "sha256": "be33985bc7160d6bf9646f259cd86b259cd67b02ccb297ee5c44f8ac84327bc8",
+      "gzip_estimated_bytes": 1167
+    },
+    "index.audio.worklet.js": {
+      "bytes": 7298,
+      "sha256": "5b476a9c9ce642c0ee4256436d1bc31d9c38f868aca0f9a8e2a57c18d2dec2a3",
+      "gzip_estimated_bytes": 2204
+    },
+    "index.html": {
+      "bytes": 7802,
+      "sha256": "7e3d8bd0d471e58665230a891129c5ebcdf80c3bfada36ef1550757a0a4c5a3d",
+      "gzip_estimated_bytes": 3162
+    },
+    "index.icon.png": {
+      "bytes": 1774,
+      "sha256": "32e51ff30f7152b4714d159f499b22cd7231f25e788437486cf7c53bb81c0848"
+    },
+    "index.js": {
+      "bytes": 279815,
+      "sha256": "33c94cb3175f3333b82e2a3be5e8e86f77986f0aa2042b1631f6367a4e5bb6ba",
+      "gzip_estimated_bytes": 68740
+    },
+    "index.pck": {
+      "bytes": 27685920,
+      "sha256": "5b8391eb34c3c8b86107695338de8aad20c381b1edf8c2835dd48f6ca8660977",
+      "gzip_estimated_bytes": 17485324
+    },
+    "index.png": {
+      "bytes": 21443,
+      "sha256": "3cb4495c0b98dfbe4b663cbf2b6836473572339beb66d902367893162a70be0e"
+    },
+    "index.wasm": {
+      "bytes": 39514754,
+      "sha256": "fc74679e3b97f76878947fcd4fbe1268cbfa6188182a2e33bbc3f5dc9bfa57d0",
+      "gzip_estimated_bytes": 10114291
+    },
+    ".nojekyll": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "serve.ps1": {
+      "bytes": 4256,
+      "sha256": "fd489312a5911931e43f6a51c55908ba5ae20eabb9ac679a257605c3ad66f352"
+    },
+    "启动网页版.cmd": {
+      "bytes": 116,
+      "sha256": "bf0e779f9ecce13bd6f509e3f26d9dcf42d6e561a5dc99c3e38d4cc2b62b2049"
+    },
+    "停止本地服务.cmd": {
+      "bytes": 460,
+      "sha256": "210e8e2f3aa717f09a609fd8eb8d62c90fea566c36ecf043e56cabe4336991f3"
+    },
+    "使用说明-优化版.txt": {
+      "bytes": 2374,
+      "sha256": "3f22c69adda7be7ccc7e9e59fa96d75936f407d6949d59d8c478ff7ded70fa91"
+    },
+    "audio-credits.txt": {
+      "bytes": 795,
+      "sha256": "3c8e208c48e62a31fcbf11196e75434766128c1fb2ac70f9dfc29b2d6b43923a"
+    }
+  },
+  "pck_audio_audit": {
+    "files_checked": 2773,
+    "old_audio_files": [],
+    "new_audio_files": 21
+  },
+  "gzip_note": "Local gzip level 6 estimate; hosting compression may differ."
+}

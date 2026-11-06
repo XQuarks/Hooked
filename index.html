@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
@@ -97,31 +97,32 @@ body {
 </head>
 	<body>
 		<canvas id="canvas">
-			Your browser does not support the canvas tag.
+			此浏览器不支持游戏画布，请使用新版浏览器。
 		</canvas>
 
 		<noscript>
-			Your browser does not support JavaScript.
+			请启用 JavaScript 后再打开游戏。
 		</noscript>
 
 		<div id="status">
 			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
-			<progress id="status-progress"></progress>
+			<p id="load-caption" style="color:#e3efe8;text-align:center;font:16px/1.6 system-ui,Microsoft YaHei,sans-serif">正在下载游戏资源，首次打开请稍候…</p><progress id="status-progress"></progress>
 			<div id="status-notice"></div>
 		</div>
 
-		<pre id="web-diagnostics" aria-hidden="true"></pre><script>
+		<pre id="web-diagnostics" aria-hidden="true"></pre><pre id="web-metrics" hidden></pre><script>
 (function(){
  const canvas=document.getElementById('canvas');
- function fit(){const h=Math.max(1,window.innerHeight),w=Math.min(window.innerWidth,h*9/16),d=Math.min(window.devicePixelRatio||1,1.5);canvas.style.width=w+'px';canvas.style.height=h+'px';canvas.width=Math.round(w*d);canvas.height=Math.round(h*d);}
+ function fit(){const h=Math.max(1,window.innerHeight),w=Math.min(window.innerWidth,h*9/16),d=Math.min(1,540/w,1134/h);canvas.style.width=w+'px';canvas.style.height=h+'px';canvas.width=Math.round(w*d);canvas.height=Math.round(h*d);}
  fit();window.addEventListener('resize',fit);
+ let stamp=0,count=0,totalFrames=0;function measure(t){if(!stamp){stamp=t;}count++;totalFrames++;if(t-stamp>=2000){document.getElementById('web-metrics').textContent=JSON.stringify({fps:Math.round(count*1000/(t-stamp)),frames:totalFrames,width:canvas.width,height:canvas.height});count=0;stamp=t;}requestAnimationFrame(measure);}requestAnimationFrame(measure);
  const originalError=console.error.bind(console);
  console.error=function(...args){const node=document.getElementById('web-diagnostics');node.textContent+=(args.map(String).join(' ')+'\n');originalError(...args);};
  window.addEventListener('error',e=>{document.getElementById('web-diagnostics').textContent+=e.message+'\n';});
 })();</script>
 <script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":55247988,"index.wasm":37902138},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":27685920,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
@@ -145,6 +146,7 @@ const engine = new Engine(GODOT_CONFIG);
 		statusOverlay.style.visibility = 'visible';
 		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
 		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		document.getElementById('load-caption').style.display = mode === 'progress' ? 'block' : 'none';
 		statusMode = mode;
 	}
 
@@ -166,9 +168,10 @@ const engine = new Engine(GODOT_CONFIG);
 		} else if (typeof err === 'string') {
 			setStatusNotice(err);
 		} else {
-			setStatusNotice('An unknown error occurred.');
+			setStatusNotice('游戏启动失败，请重新加载。');
 		}
 		setStatusMode('notice');
+        const retry=document.createElement('button');retry.textContent='重新加载';retry.style.cssText='display:block;margin:18px auto;padding:10px 24px;font-size:16px';retry.onclick=()=>window.location.reload();statusNotice.appendChild(retry);
 		initializing = false;
 	}
 
@@ -204,16 +207,18 @@ const engine = new Engine(GODOT_CONFIG);
 			});
 		} else {
 			// Display the message as usual
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+			const missingMsg = '此浏览器缺少运行游戏所需的图形功能：\n';
 			displayFailureNotice(missingMsg + missing.join('\n'));
 		}
 	} else {
 		setStatusMode('progress');
 		engine.startGame({
 			'onProgress': function (current, total) {
+				if (!initializing) { return; }
 				if (current > 0 && total > 0) {
 					statusProgress.value = current;
 					statusProgress.max = total;
+                    if(current>=total){document.getElementById('load-caption').textContent='资源已下载，正在初始化画面…';}
 				} else {
 					statusProgress.removeAttribute('value');
 					statusProgress.removeAttribute('max');

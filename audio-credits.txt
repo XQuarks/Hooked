@@ -1,0 +1,12 @@
+一钩上天 · 音乐与音效鸣谢
+
+音乐：魔王魂（森田交一） https://maou.audio/
+许可：Creative Commons Attribution 4.0，https://creativecommons.org/licenses/by/4.0/
+使用规则：https://maou.audio/rule/
+选曲：アコースティック50、アコースティック47、アコースティック52、ダンジョン22、8bit25、8bit27。为游戏调整音量、采样率和编码，非本项目原创。
+
+音效：Kenney，UI Audio / RPG Audio / Sci-fi Sounds / Impact Sounds
+https://kenney.nl/assets  · CC0 1.0，https://creativecommons.org/publicdomain/zero/1.0/
+音效经过单声道、裁切、变调、淡出、音量和编码处理。
+
+逐文件出处、修改、哈希与测量见 data/audio_library.json；原游戏音频不再用于运行或发布。
